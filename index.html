@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a2540" />
+  <title>Instituto ParaSurf</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/app/styles/global.css" />
+</head>
+<body>
+
+<div id="login-screen" class="login-page" style="display:none;">
+  <div class="login-logo">🏄</div>
+  <div class="login-title">INSTITUTO<br>PARASURF</div>
+  <div class="login-sub">Sistema de Presença</div>
+  <div class="login-card">
+    <h2>Entrar no App</h2>
+    <div class="form-group">
+      <label class="form-label">Seu Nome</label>
+      <input class="form-input" id="login-nome" type="text" placeholder="Ex: Carlos Mestre" autocomplete="name" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Perfil</label>
+      <div class="profile-selector">
+        <div class="profile-option selected" data-perfil="professor"><span class="profile-emoji">🎓</span><span class="profile-label">Professor</span></div>
+        <div class="profile-option" data-perfil="aluno"><span class="profile-emoji">🏄</span><span class="profile-label">Aluno</span></div>
+        <div class="profile-option" data-perfil="estagiario"><span class="profile-emoji">📋</span><span class="profile-label">Estagiário</span></div>
+        <div class="profile-option" data-perfil="voluntario"><span class="profile-emoji">🤝</span><span class="profile-label">Voluntário</span></div>
+      </div>
+      <select class="form-select" id="login-perfil" style="display:none;">
+        <option value="professor">Professor</option>
+        <option value="aluno">Aluno</option>
+        <option value="estagiario">Estagiário</option>
+        <option value="voluntario">Voluntário</option>
+      </select>
+    </div>
+    <button class="btn btn-primary btn-full" id="btn-login">🌊 Entrar</button>
+    <div class="login-footer">Instituto ParaSurf · <strong>+55 27 98866-8868</strong></div>
+  </div>
+  <div style="margin-top:20px;font-size:11px;color:rgba(255,255,255,0.45);text-align:center;">Demo: use o nome dos cadastros de exemplo.<br>Ex: "Carlos Mestre" como Professor</div>
+</div>
+
+<div id="main-app" style="display:none;flex-direction:column;min-height:100vh;">
+  <header class="app-header">
+    <div class="header-logo">
+      <span style="font-size:28px;">🏄</span>
+      <div class="header-brand">
+        <span class="name">ParaSurf</span>
+        <span class="tagline">Instituto · Vila Velha</span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <span style="color:#90caf9;font-size:13px;font-weight:700;" id="header-user-name"></span>
+      <button class="btn-icon" id="btn-logout" title="Sair">🚪</button>
+    </div>
+  </header>
+
+  <div class="page active" id="page-home">
+    <div class="hero-strip">
+      <div class="greeting">Olá,</div>
+      <div class="hero-name" id="hero-name">…</div>
+      <div class="hero-role" id="hero-role"></div>
+      <div class="hero-stats">
+        <div class="stat"><div class="stat-val" id="stat-confirmados">0</div><div class="stat-lbl">Confirmados</div></div>
+        <div class="stat"><div class="stat-val" id="stat-equipe">0</div><div class="stat-lbl">Equipe</div></div>
+        <div class="stat"><div class="stat-val" id="stat-alunos">0</div><div class="stat-lbl">Alunos</div></div>
+      </div>
+    </div>
+    <div id="home-dynamic"></div>
+  </div>
+
+  <div class="page" id="page-avisos">
+    <div class="section-title">📢 Avisos</div>
+    <div class="section-sub">Comunicados do professor para a equipe.</div>
+    <div id="avisos-list"></div>
+    <button class="fab" id="fab-aviso" onclick="openModal('modal-aviso')" title="Novo Aviso" style="display:none;">✏️</button>
+  </div>
+
+  <div class="page" id="page-confirmacao">
+    <div class="section-title">✅ Confirmações</div>
+    <div class="section-sub">Veja quem confirmou presença na próxima aula.</div>
+    <div id="confirmacao-content"></div>
+  </div>
+
+  <div class="page" id="page-cadastro">
+    <div class="section-title">👥 Cadastro</div>
+    <div id="cadastro-filter-wrap" style="padding:0 16px 4px;">
+      <select class="form-select" id="cadastro-filter" onchange="handleCadastroFilter(this.value)" style="max-width:220px;">
+        <option value="aluno">🏄 Alunos</option>
+        <option value="estagiario">📋 Estagiários</option>
+        <option value="voluntario">🤝 Voluntários</option>
+        <option value="professor">🎓 Professores</option>
+      </select>
+    </div>
+    <div class="section-sub" id="cadastro-section-title">Lista</div>
+    <div class="card" style="margin:8px 16px;">
+      <div id="cadastro-list"></div>
+    </div>
+    <button class="fab" id="fab-cadastro" onclick="openModal('modal-cadastro')" title="Novo Cadastro">➕</button>
+  </div>
+
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-page="page-home"><span class="nav-icon">🏠</span><span>Início</span></button>
+    <button class="nav-item" data-page="page-avisos" id="nav-avisos"><span class="nav-icon">📢</span><span>Avisos</span></button>
+    <button class="nav-item" data-page="page-confirmacao" id="nav-confirmacao"><span class="nav-icon">✅</span><span>Confirmar</span></button>
+    <button class="nav-item" data-page="page-cadastro" id="nav-cadastro"><span class="nav-icon">👥</span><span>Cadastro</span></button>
+  </nav>
+</div>
+
+<!-- Modal Aviso -->
+<div class="modal-overlay" id="modal-aviso">
+  <div class="modal-sheet">
+    <button class="modal-close" onclick="closeModal('modal-aviso')">✕</button>
+    <div class="modal-title">📢 Novo Aviso</div>
+    <div class="form-group"><label class="form-label">Título</label><input class="form-input" id="aviso-titulo" type="text" placeholder="Título do aviso" /></div>
+    <div class="form-group"><label class="form-label">Mensagem</label><textarea class="form-textarea" id="aviso-msg" placeholder="Escreva a mensagem..."></textarea></div>
+    <div class="form-group"><label class="form-label" style="display:flex;align-items:center;gap:10px;cursor:pointer;"><input type="checkbox" id="aviso-urgente" style="width:18px;height:18px;" /> ⚠️ Marcar como urgente</label></div>
+    <div class="form-group">
+      <label class="form-label">Destinatários</label>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;"><input type="checkbox" id="dest-aluno" checked style="width:18px;height:18px;" /> 🏄 Alunos</label>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;"><input type="checkbox" id="dest-estagiario" checked style="width:18px;height:18px;" /> 📋 Estagiários</label>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;"><input type="checkbox" id="dest-voluntario" checked style="width:18px;height:18px;" /> 🤝 Voluntários</label>
+      </div>
+    </div>
+    <button class="btn btn-primary btn-full" id="btn-salvar-aviso">📢 Publicar Aviso</button>
+  </div>
+</div>
+
+<!-- Modal Nova Aula -->
+<div class="modal-overlay" id="modal-nova-aula">
+  <div class="modal-sheet">
+    <button class="modal-close" onclick="closeModal('modal-nova-aula')">✕</button>
+    <div class="modal-title">📅 Nova Aula</div>
+    <div class="form-group"><label class="form-label">Título da Aula</label><input class="form-input" id="aula-titulo" type="text" placeholder="Ex: Surf Adaptado — Turma B" /></div>
+    <div class="form-group"><label class="form-label">Data</label><input class="form-input" id="aula-data" type="date" /></div>
+    <div class="form-group"><label class="form-label">Horário</label><input class="form-input" id="aula-horario" type="time" /></div>
+    <div class="form-group"><label class="form-label">Local</label><input class="form-input" id="aula-local" type="text" placeholder="Ex: Praia de Itaparica, Vila Velha" /></div>
+    <div class="form-group"><label class="form-label">Descrição (opcional)</label><textarea class="form-textarea" id="aula-desc" placeholder="Observações..."></textarea></div>
+    <button class="btn btn-primary btn-full" id="btn-salvar-aula">✅ Criar Aula</button>
+  </div>
+</div>
+
+<!-- Modal Cadastro -->
+<div class="modal-overlay" id="modal-cadastro">
+  <div class="modal-sheet">
+    <button class="modal-close" onclick="closeModal('modal-cadastro')">✕</button>
+    <div class="modal-title">👤 Novo Cadastro</div>
+    <div class="form-group"><label class="form-label">Nome Completo</label><input class="form-input" id="cad-nome" type="text" placeholder="Nome completo" /></div>
+    <div class="form-group"><label class="form-label">E-mail</label><input class="form-input" id="cad-email" type="email" placeholder="email@exemplo.com" /></div>
+    <div class="form-group"><label class="form-label">Telefone</label><input class="form-input" id="cad-tel" type="tel" placeholder="27 9xxxx-xxxx" /></div>
+    <div class="form-group">
+      <label class="form-label">Perfil</label>
+      <select class="form-select" id="cad-perfil">
+        <option value="aluno">🏄 Aluno</option>
+        <option value="estagiario">📋 Estagiário</option>
+        <option value="voluntario">🤝 Voluntário</option>
+        <option value="professor">🎓 Professor</option>
+      </select>
+    </div>
+    <button class="btn btn-primary btn-full" id="btn-salvar-pessoa">✅ Cadastrar</button>
+  </div>
+</div>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
