@@ -317,14 +317,17 @@ function renderCadastro() {
   const u = store.getUsuario();
   if (!u) return;
 
+  // Só renderiza se for gestor
+  if (u.perfil !== 'professor') {
+    return;
+  }
+
   const container = document.getElementById('cadastro-list');
   const sectionTitle = document.getElementById('cadastro-section-title');
   if (!container) return;
 
-  // Gestor pode ver todos, outros veem apenas seu tipo
-  const perfil: PerfilTipo = u.perfil === 'professor' ? 'aluno' : u.perfil;
   const filterSelect = document.getElementById('cadastro-filter') as HTMLSelectElement;
-  const activePerfil: PerfilTipo = (filterSelect?.value as PerfilTipo) || perfil;
+  const activePerfil: PerfilTipo = (filterSelect?.value as PerfilTipo) || 'aluno';
 
   if (sectionTitle) {
     sectionTitle.textContent = `Lista de ${perfilLabel(activePerfil)}s`;
@@ -598,6 +601,13 @@ function setupForms() {
   // Cadastro form
   const cadastroBtn = document.getElementById('btn-salvar-pessoa');
   cadastroBtn?.addEventListener('click', () => {
+    const u = store.getUsuario();
+    if (!u || u.perfil !== 'professor') {
+      toast('⚠️ Apenas gestores podem cadastrar pessoas.');
+      closeModal('modal-cadastro');
+      return;
+    }
+
     const nome    = (document.getElementById('cad-nome') as HTMLInputElement)?.value?.trim();
     const perfilSelect = (document.getElementById('cad-perfil') as HTMLSelectElement)?.value;
     
@@ -659,11 +669,6 @@ function initApp() {
 
   // Adjust nav visibility per profile
   const isProfessor = u.perfil === 'professor';
-  const navAvisos = document.getElementById('nav-avisos');
-  const fabAviso = document.getElementById('fab-aviso');
-  const fabCadastro = document.getElementById('fab-cadastro');
-  const navConfirmacao = document.getElementById('nav-confirmacao');
-  const navCadastro = document.getElementById('nav-cadastro');
   
   // Mostra/esconde link de trocar senha (apenas para gestor)
   const linkTrocarSenha = document.getElementById('link-trocar-senha');
@@ -675,29 +680,44 @@ function initApp() {
     }
   }
 
+  // Mostra/esconde a aba de cadastro (apenas para gestor)
+  const navCadastro = document.getElementById('nav-cadastro');
+  if (navCadastro) {
+    if (isProfessor) {
+      navCadastro.style.display = 'flex';
+    } else {
+      navCadastro.style.display = 'none';
+    }
+  }
+
+  // Mostra/esconde o FAB de cadastro (apenas para gestor)
+  const fabCadastro = document.getElementById('fab-cadastro');
+  if (fabCadastro) {
+    fabCadastro.style.display = isProfessor ? 'flex' : 'none';
+  }
+
+  // Mostra/esconde o filtro de cadastro (apenas para gestor)
+  const cadastroFilter = document.getElementById('cadastro-filter-wrap');
+  if (cadastroFilter) {
+    cadastroFilter.style.display = isProfessor ? 'block' : 'none';
+  }
+
+  // FAB de aviso (apenas para gestor)
+  const fabAviso = document.getElementById('fab-aviso');
+  if (fabAviso) {
+    fabAviso.style.display = isProfessor ? 'flex' : 'none';
+  }
+
   // Set user display
   const headerUser = document.getElementById('header-user-name');
   if (headerUser) headerUser.textContent = u.nome.split(' ')[0];
 
-  // Show correct nav items
-  document.querySelectorAll('.nav-item').forEach(n => {
-    (n as HTMLElement).style.display = 'flex';
-  });
-
-  // Filter nav for cadastro (gestor can manage all, others see own only)
-  const cadastroFilter = document.getElementById('cadastro-filter-wrap');
-  if (cadastroFilter) {
-    (cadastroFilter as HTMLElement).style.display = isProfessor ? 'block' : 'none';
-  }
-
-  // FABs
-  if (fabAviso) (fabAviso as HTMLElement).style.display = isProfessor ? 'flex' : 'none';
-  if (fabCadastro) (fabCadastro as HTMLElement).style.display = 'flex';
-
-  // Pre-fill cadastro filter
-  const filterSel = document.getElementById('cadastro-filter') as HTMLSelectElement;
-  if (filterSel && !isProfessor) {
-    filterSel.value = u.perfil;
+  // Se não for gestor e estiver na página de cadastro, redireciona para home
+  if (!isProfessor) {
+    const activePage = document.querySelector('.page.active');
+    if (activePage?.id === 'page-cadastro') {
+      showPage('page-home');
+    }
   }
 
   showPage('page-home');

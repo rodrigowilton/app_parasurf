@@ -147,6 +147,7 @@
   </nav>
 </div>
 
+<!-- MODAL DE ALTERAR SENHA -->
 <div class="modal-overlay" id="modal-senha">
   <div class="modal-sheet">
     <div class="modal-title">🔐 Alterar Senha</div>
@@ -163,6 +164,7 @@
   </div>
 </div>
 
+<!-- MODAL DE NOVO AVISO -->
 <div class="modal-overlay" id="modal-aviso">
   <div class="modal-sheet">
     <button class="modal-close" onclick="closeModal('modal-aviso')">✕</button>
@@ -179,6 +181,7 @@
   </div>
 </div>
 
+<!-- MODAL DE NOVO CADASTRO -->
 <div class="modal-overlay" id="modal-cadastro">
   <div class="modal-sheet">
     <button class="modal-close" onclick="closeModal('modal-cadastro')">✕</button>
@@ -197,34 +200,7 @@
   </div>
 </div>
 
-<script type="module" src="/src/main.ts"></script>
-<script>
-  // Lógica de interface para Perfil Gestor vs Outros
-  const profileOptions = document.querySelectorAll('.profile-option');
-  const passGroup = document.getElementById('pass-group');
-  const loginPerfil = document.getElementById('login-perfil');
-
-  profileOptions.forEach(opt => {
-    opt.addEventListener('click', () => {
-      const perfil = opt.getAttribute('data-perfil');
-      if(perfil === 'gestor') {
-        passGroup.classList.remove('hidden');
-      } else {
-        passGroup.classList.add('hidden');
-      }
-    });
-  });
-
-  // Função auxiliar para abrir/fechar modais (caso o main.ts ainda não tenha carregado)
-  window.openModal = function(id) { document.getElementById(id).classList.add('active'); };
-  window.closeModal = function(id) { document.getElementById(id).classList.remove('active'); };
-
-  document.getElementById('link-trocar-senha')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    openModal('modal-senha');
-  });
-</script>
-<!-- Modal Nova Aula -->
+<!-- MODAL DE NOVA AULA (ADICIONADO) -->
 <div class="modal-overlay" id="modal-nova-aula">
   <div class="modal-sheet">
     <button class="modal-close" onclick="closeModal('modal-nova-aula')">✕</button>
@@ -258,5 +234,33 @@
     <button class="btn btn-primary btn-full" id="btn-salvar-aula">✅ Agendar Aula</button>
   </div>
 </div>
+
+<script type="module" src="/src/main.ts"></script>
+<script>
+  // Lógica de interface para Perfil Gestor vs Outros
+  const profileOptions = document.querySelectorAll('.profile-option');
+  const passGroup = document.getElementById('pass-group');
+  const loginPerfil = document.getElementById('login-perfil');
+
+  profileOptions.forEach(opt => {
+    opt.addEventListener('click', () => {
+      const perfil = opt.getAttribute('data-perfil');
+      if(perfil === 'gestor') {
+        passGroup.classList.remove('hidden');
+      } else {
+        passGroup.classList.add('hidden');
+      }
+    });
+  });
+
+  // Função auxiliar para abrir/fechar modais (caso o main.ts ainda não tenha carregado)
+  window.openModal = function(id) { document.getElementById(id).classList.add('open'); };
+  window.closeModal = function(id) { document.getElementById(id).classList.remove('open'); };
+
+  document.getElementById('link-trocar-senha')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    openModal('modal-senha');
+  });
+</script>
 </body>
 </html>
