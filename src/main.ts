@@ -16,11 +16,11 @@ function fmtTime(date: string): string {
   } catch { return ''; }
 }
 function perfilLabel(p: PerfilTipo): string {
-  const map: Record<PerfilTipo,string> = { professor:'Professor', aluno:'Aluno', estagiario:'Estagiário', voluntario:'Voluntário' };
+  const map: Record<PerfilTipo,string> = { professor:'Gestor', aluno:'Aluno', estagiario:'Estagiário', voluntario:'Voluntário' };
   return map[p];
 }
 function perfilEmoji(p: PerfilTipo): string {
-  const map: Record<PerfilTipo,string> = { professor:'🎓', aluno:'🏄', estagiario:'📋', voluntario:'🤝' };
+  const map: Record<PerfilTipo,string> = { professor:'🏢', aluno:'🏄', estagiario:'📋', voluntario:'🤝' };
   return map[p];
 }
 function initials(name: string): string {
@@ -113,7 +113,7 @@ function renderHomeProfessor(container: HTMLElement) {
   if (statTeam) statTeam.textContent = String(est.length + vol.length);
   if (statAlun) statAlun.textContent = String(alunos.length);
 
-  // Aula card
+  // Aula card com botão de nova aula
   let html = '';
   if (aula) {
     html += `
@@ -122,10 +122,14 @@ function renderHomeProfessor(container: HTMLElement) {
       <div class="aula-title">${aula.titulo}</div>
       <div class="aula-info">📍 ${aula.local}</div>
       <div class="aula-date">🗓 ${fmt(aula.data)} às ${aula.horario}</div>
+      ${aula.descricao ? `<div class="aula-desc" style="margin-top:10px; font-size:13px; opacity:0.9;">📝 ${aula.descricao}</div>` : ''}
     </div>`;
   } else {
     html += `<div class="card" style="margin:12px 16px;text-align:center;color:var(--text-light);">
-      Nenhuma aula agendada. <button class="btn btn-primary btn-sm" style="margin-top:8px;" onclick="openModal('modal-nova-aula')">+ Nova Aula</button>
+      <div style="font-size:48px; margin-bottom:10px;">📅</div>
+      <div style="font-weight:bold; margin-bottom:5px;">Nenhuma aula agendada</div>
+      <div style="font-size:13px; margin-bottom:15px;">Clique no botão + para agendar uma nova aula.</div>
+      <button class="btn btn-primary" onclick="openModal('modal-nova-aula')">+ Nova Aula</button>
     </div>`;
   }
 
@@ -145,12 +149,11 @@ function renderHomeProfessor(container: HTMLElement) {
         <div class="card-title">${g.label}</div>`;
       for (const p of g.lista) {
         const c = confs.find(x => x.pessoaId === p.id);
-        const statusIcon = c?.status === 'confirmado' ? '✅' : c?.status === 'nao_vai' ? '❌' : '⏳';
         const statusBadge = c?.status === 'confirmado'
-          ? '<span class="badge badge-confirm">Confirmado</span>'
+          ? '<span class="badge badge-confirm">✅ Confirmado</span>'
           : c?.status === 'nao_vai'
-          ? '<span class="badge" style="background:#fce4ec;color:#c62828;">Não vai</span>'
-          : '<span class="badge badge-pendente">Pendente</span>';
+          ? '<span class="badge" style="background:#fce4ec;color:#c62828;">❌ Não vai</span>'
+          : '<span class="badge badge-pendente">⏳ Pendente</span>';
         html += `<div class="person-row">
           <div class="avatar avatar-${g.perfil}">${initials(p.nome)}</div>
           <div class="person-info">
@@ -177,6 +180,7 @@ function renderHomeAluno(container: HTMLElement, u: Pessoa) {
       <div class="aula-title">${aula.titulo}</div>
       <div class="aula-info">📍 ${aula.local}</div>
       <div class="aula-date">🗓 ${fmt(aula.data)} às ${aula.horario}</div>
+      ${aula.descricao ? `<div class="aula-desc" style="margin-top:10px; font-size:13px; opacity:0.9;">📝 ${aula.descricao}</div>` : ''}
     </div>`;
 
     const status = conf?.status;
@@ -203,7 +207,7 @@ function renderHomeAluno(container: HTMLElement, u: Pessoa) {
     html += `<div class="empty-state">
       <div class="empty-icon">🌊</div>
       <div class="empty-text">Nenhuma aula agendada</div>
-      <div class="empty-sub">O professor ainda não agendou uma aula.</div>
+      <div class="empty-sub">O gestor ainda não agendou uma aula.</div>
     </div>`;
   }
 
@@ -254,15 +258,19 @@ function renderConfirmacao() {
 
   const aula = store.getAulaAtiva();
   if (!aula) {
-    container.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Nenhuma aula ativa</div><div class="empty-sub">Aguarde o professor agendar uma aula.</div></div>`;
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Nenhuma aula ativa</div><div class="empty-sub">Aguarde o gestor agendar uma aula.</div></div>`;
     return;
   }
 
   const confs = store.getConfirmacoes(aula.id);
   const todos = store.getPessoas();
-  const equipe = todos.filter(p => p.id !== (store.getPessoas('professor')[0]?.id));
+  const equipe = todos.filter(p => p.perfil !== 'professor');
 
-  let html = `<div class="aula-card">${aula.titulo}<br><small style="opacity:.8">📍 ${aula.local} | 🗓 ${fmt(aula.data)} ${aula.horario}</small></div>`;
+  let html = `<div class="aula-card">
+    <div class="aula-title">${aula.titulo}</div>
+    <div class="aula-info">📍 ${aula.local}</div>
+    <div class="aula-date">🗓 ${fmt(aula.data)} às ${aula.horario}</div>
+  </div>`;
 
   const grupos: Array<{label:string; perfil: PerfilTipo}> = [
     { label:'👩‍🎓 Alunos', perfil:'aluno' },
@@ -313,7 +321,7 @@ function renderCadastro() {
   const sectionTitle = document.getElementById('cadastro-section-title');
   if (!container) return;
 
-  // Professor can see all, others see only their type
+  // Gestor pode ver todos, outros veem apenas seu tipo
   const perfil: PerfilTipo = u.perfil === 'professor' ? 'aluno' : u.perfil;
   const filterSelect = document.getElementById('cadastro-filter') as HTMLSelectElement;
   const activePerfil: PerfilTipo = (filterSelect?.value as PerfilTipo) || perfil;
@@ -399,13 +407,71 @@ function setupForms() {
   const loginBtn = document.getElementById('btn-login');
   loginBtn?.addEventListener('click', () => {
     const nome = (document.getElementById('login-nome') as HTMLInputElement)?.value?.trim();
-    const perfil = (document.getElementById('login-perfil') as HTMLSelectElement)?.value as PerfilTipo;
-    if (!nome) { toast('⚠️ Digite seu nome'); return; }
-    const user = store.loginByNome(nome, perfil);
+    const perfilSelect = document.getElementById('login-perfil') as HTMLSelectElement;
+    const perfilSelecionado = perfilSelect?.value;
+    const senha = (document.getElementById('login-senha') as HTMLInputElement)?.value?.trim();
+    
+    console.log('=== TENTATIVA DE LOGIN ===');
+    console.log('Nome digitado:', nome);
+    console.log('Perfil selecionado (HTML):', perfilSelecionado);
+    console.log('Senha digitada:', senha);
+    
+    if (!nome) { 
+      toast('⚠️ Digite seu nome'); 
+      return; 
+    }
+    
+    // Mapeia o perfil do HTML para o tipo do sistema
+    let perfilSistema: PerfilTipo;
+    if (perfilSelecionado === 'gestor') {
+      perfilSistema = 'professor'; // Mapeia gestor para professor
+    } else {
+      perfilSistema = perfilSelecionado as PerfilTipo; // aluno, estagiario, voluntario
+    }
+    
+    console.log('Perfil mapeado para sistema:', perfilSistema);
+    
+    let user: Pessoa | null = null;
+    
+    if (perfilSistema === 'professor') {
+      // Gestor precisa de senha
+      if (!senha) {
+        toast('⚠️ Digite a senha');
+        return;
+      }
+      user = store.loginComSenha(nome, perfilSistema, senha);
+      console.log('Resultado login gestor:', user);
+    } else {
+      // Outros perfis não precisam de senha
+      user = store.loginByNome(nome, perfilSistema);
+      console.log('Resultado login outros:', user);
+    }
+    
     if (!user) {
-      toast('❌ Usuário não encontrado. Verifique nome e perfil.');
+      console.log('❌ LOGIN FALHOU - Usuário não encontrado ou senha incorreta');
+      
+      // Vamos listar todos os usuários disponíveis para debug
+      const todosUsuarios = store.getPessoas();
+      console.log('Usuários disponíveis no sistema:', todosUsuarios.map(u => ({
+        nome: u.nome,
+        perfil: u.perfil,
+        id: u.id
+      })));
+      
+      toast('❌ Usuário não encontrado ou senha incorreta.');
       return;
     }
+
+    console.log('✅ LOGIN BEM SUCEDIDO! Usuário:', user);
+    
+    // Verifica se é primeiro acesso do gestor (senha padrão)
+    if (user.perfil === 'professor' && store.isPrimeiroAcesso(user.id)) {
+      toast('🔐 Primeiro acesso. Por favor, altere sua senha.');
+      setTimeout(() => {
+        openModal('modal-senha');
+      }, 500);
+    }
+    
     initApp();
   });
 
@@ -419,6 +485,93 @@ function setupForms() {
     });
   });
 
+  // Botão de alterar senha
+  const btnSalvarSenha = document.getElementById('btn-salvar-senha');
+  btnSalvarSenha?.addEventListener('click', () => {
+    const u = store.getUsuario();
+    if (!u || u.perfil !== 'professor') {
+      toast('⚠️ Apenas gestores podem alterar senha.');
+      closeModal('modal-senha');
+      return;
+    }
+
+    const novaSenha = (document.getElementById('nova-senha') as HTMLInputElement)?.value;
+    const confirmaSenha = (document.getElementById('confirma-senha') as HTMLInputElement)?.value;
+
+    if (!novaSenha || novaSenha.length < 6) {
+      toast('⚠️ A senha deve ter no mínimo 6 caracteres.');
+      return;
+    }
+
+    if (novaSenha !== confirmaSenha) {
+      toast('⚠️ As senhas não conferem.');
+      return;
+    }
+
+    // Tenta alterar a senha
+    const sucesso = store.alterarSenhaPrimeiroAcesso(u.id, novaSenha);
+    
+    if (sucesso) {
+      toast('✅ Senha alterada com sucesso!');
+      closeModal('modal-senha');
+      
+      // Limpa os campos
+      (document.getElementById('nova-senha') as HTMLInputElement).value = '';
+      (document.getElementById('confirma-senha') as HTMLInputElement).value = '';
+    } else {
+      toast('❌ Erro ao alterar senha.');
+    }
+  });
+
+  // Botão de salvar aula
+  const aulaBtn = document.getElementById('btn-salvar-aula');
+  aulaBtn?.addEventListener('click', () => {
+    const u = store.getUsuario();
+    if (!u || u.perfil !== 'professor') {
+      toast('⚠️ Apenas gestores podem agendar aulas.');
+      closeModal('modal-nova-aula');
+      return;
+    }
+
+    const titulo = (document.getElementById('aula-titulo') as HTMLInputElement)?.value?.trim();
+    const data = (document.getElementById('aula-data') as HTMLInputElement)?.value;
+    const horario = (document.getElementById('aula-horario') as HTMLInputElement)?.value;
+    const local = (document.getElementById('aula-local') as HTMLInputElement)?.value?.trim();
+    const descricao = (document.getElementById('aula-desc') as HTMLTextAreaElement)?.value?.trim();
+
+    if (!titulo || !data || !horario || !local) {
+      toast('⚠️ Preencha todos os campos obrigatórios.');
+      return;
+    }
+
+    // Formata a data para o padrão brasileiro
+    const dataObj = new Date(data + 'T' + horario);
+    const dataFormatada = dataObj.toISOString();
+
+    store.addAula({
+      titulo,
+      data: dataFormatada,
+      horario,
+      local,
+      descricao: descricao || '',
+      professorId: u.id,
+      status: 'agendada'
+    });
+
+    toast('✅ Aula agendada com sucesso!');
+    closeModal('modal-nova-aula');
+
+    // Limpa o formulário
+    (document.getElementById('aula-titulo') as HTMLInputElement).value = '';
+    (document.getElementById('aula-data') as HTMLInputElement).value = '';
+    (document.getElementById('aula-horario') as HTMLInputElement).value = '';
+    (document.getElementById('aula-local') as HTMLInputElement).value = '';
+    (document.getElementById('aula-desc') as HTMLTextAreaElement).value = '';
+
+    renderHome();
+    renderConfirmacao();
+  });
+
   // Aviso form
   const avisoBtn = document.getElementById('btn-salvar-aviso');
   avisoBtn?.addEventListener('click', () => {
@@ -428,13 +581,13 @@ function setupForms() {
     const mensagem = (document.getElementById('aviso-msg') as HTMLTextAreaElement)?.value?.trim();
     const urgente = (document.getElementById('aviso-urgente') as HTMLInputElement)?.checked;
     const destinatarios: PerfilTipo[] = [];
-    (['aluno','estagiario','voluntario'] as PerfilTipo[]).forEach(p => {
-      const cb = document.getElementById(`dest-${p}`) as HTMLInputElement;
-      if (cb?.checked) destinatarios.push(p);
-    });
+    
+    // Por enquanto, envia para todos
+    destinatarios.push('aluno', 'estagiario', 'voluntario');
+    
     if (!titulo || !mensagem) { toast('⚠️ Preencha título e mensagem.'); return; }
-    if (!destinatarios.length) { toast('⚠️ Selecione ao menos um destinatário.'); return; }
-    store.addAviso({ titulo, mensagem, urgente, destinatarios, autorId: u.id });
+    
+    store.addAviso({ titulo, mensagem, urgente: urgente || false, destinatarios, autorId: u.id });
     toast('📢 Aviso enviado!');
     closeModal('modal-aviso');
     (document.getElementById('aviso-titulo') as HTMLInputElement).value = '';
@@ -442,37 +595,30 @@ function setupForms() {
     renderAvisos();
   });
 
-  // Nova aula form
-  const aulaBtn = document.getElementById('btn-salvar-aula');
-  aulaBtn?.addEventListener('click', () => {
-    const u = store.getUsuario();
-    if (!u) return;
-    const titulo = (document.getElementById('aula-titulo') as HTMLInputElement)?.value?.trim();
-    const data   = (document.getElementById('aula-data') as HTMLInputElement)?.value;
-    const horario= (document.getElementById('aula-horario') as HTMLInputElement)?.value;
-    const local  = (document.getElementById('aula-local') as HTMLInputElement)?.value?.trim();
-    const desc   = (document.getElementById('aula-desc') as HTMLTextAreaElement)?.value?.trim();
-    if (!titulo || !data || !horario || !local) { toast('⚠️ Preencha todos os campos.'); return; }
-    store.addAula({ titulo, data, horario, local, descricao: desc, professorId: u.id, status: 'agendada' });
-    toast('✅ Aula criada!');
-    closeModal('modal-nova-aula');
-    renderHome();
-  });
-
   // Cadastro form
   const cadastroBtn = document.getElementById('btn-salvar-pessoa');
   cadastroBtn?.addEventListener('click', () => {
     const nome    = (document.getElementById('cad-nome') as HTMLInputElement)?.value?.trim();
-    const email   = (document.getElementById('cad-email') as HTMLInputElement)?.value?.trim();
-    const tel     = (document.getElementById('cad-tel') as HTMLInputElement)?.value?.trim();
-    const perfil  = (document.getElementById('cad-perfil') as HTMLSelectElement)?.value as PerfilTipo;
-    if (!nome || !email || !tel) { toast('⚠️ Preencha todos os campos.'); return; }
-    store.addPessoa({ nome, email, telefone: tel, perfil, ativo: true });
-    toast(`✅ ${perfilLabel(perfil)} cadastrado!`);
+    const perfilSelect = (document.getElementById('cad-perfil') as HTMLSelectElement)?.value;
+    
+    // Mapeia o perfil do HTML para o tipo do sistema
+    let perfilSistema: PerfilTipo;
+    if (perfilSelect === 'gestor') {
+      perfilSistema = 'professor';
+    } else {
+      perfilSistema = perfilSelect as PerfilTipo;
+    }
+    
+    if (!nome) { toast('⚠️ Preencha o nome.'); return; }
+    
+    // Gera email e telefone padrão se não existirem
+    const email = `${nome.toLowerCase().replace(/\s+/g, '.')}@email.com`;
+    const telefone = '(27) 99999-9999';
+    
+    store.addPessoa({ nome, email, telefone, perfil: perfilSistema, ativo: true });
+    toast(`✅ ${perfilLabel(perfilSistema)} cadastrado!`);
     closeModal('modal-cadastro');
     (document.getElementById('cad-nome') as HTMLInputElement).value = '';
-    (document.getElementById('cad-email') as HTMLInputElement).value = '';
-    (document.getElementById('cad-tel') as HTMLInputElement).value = '';
     renderCadastro();
   });
 
@@ -518,6 +664,16 @@ function initApp() {
   const fabCadastro = document.getElementById('fab-cadastro');
   const navConfirmacao = document.getElementById('nav-confirmacao');
   const navCadastro = document.getElementById('nav-cadastro');
+  
+  // Mostra/esconde link de trocar senha (apenas para gestor)
+  const linkTrocarSenha = document.getElementById('link-trocar-senha');
+  if (linkTrocarSenha) {
+    if (isProfessor) {
+      linkTrocarSenha.classList.remove('hidden');
+    } else {
+      linkTrocarSenha.classList.add('hidden');
+    }
+  }
 
   // Set user display
   const headerUser = document.getElementById('header-user-name');
@@ -528,7 +684,7 @@ function initApp() {
     (n as HTMLElement).style.display = 'flex';
   });
 
-  // Filter nav for cadastro (professor can manage all, others see own only)
+  // Filter nav for cadastro (gestor can manage all, others see own only)
   const cadastroFilter = document.getElementById('cadastro-filter-wrap');
   if (cadastroFilter) {
     (cadastroFilter as HTMLElement).style.display = isProfessor ? 'block' : 'none';

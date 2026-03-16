@@ -1,245 +1,275 @@
 // =============================================
-// Instituto ParaSurf — Store (LocalStorage)
+// Instituto ParaSurf — Store (Gerenciamento de Estado)
 // =============================================
-import type { AppState, Pessoa, Aula, Confirmacao, Aviso, PerfilTipo } from '../models';
+import type { PerfilTipo, Pessoa, Aula, Confirmacao, Aviso, AppState } from '../models';
 
-const STORAGE_KEY = 'parasurf_data';
+// Usuários padrão
+const USUARIO_PADRAO: Pessoa = {
+  id: 'gestor-padrao',
+  nome: 'Gestor',
+  perfil: 'professor', // 'professor' é o equivalente a gestor no sistema
+  email: 'gestor@parasurf.org',
+  telefone: '(27) 98866-8868',
+  ativo: true,
+  criadoEm: new Date().toISOString()
+};
 
-function uid(): string {
-  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-}
+// Usuário alternativo para teste
+const USUARIO_ADMIN: Pessoa = {
+  id: 'admin-padrao',
+  nome: 'Administrador',
+  perfil: 'professor',
+  email: 'admin@parasurf.org',
+  telefone: '(27) 99999-9999',
+  ativo: true,
+  criadoEm: new Date().toISOString()
+};
 
-function now(): string {
-  return new Date().toISOString();
-}
+// Mapa de senhas (em produção, isso seria hash, mas para exemplo usamos texto plano)
+const SENHAS: Record<string, string> = {
+  'gestor-padrao': '123456',
+  'admin-padrao': '123456'
+};
 
-function seed(): AppState {
-  const professorId = uid();
-  const state: AppState = {
-    usuarioLogado: null,
-    pessoas: [
-      {
-        id: professorId,
-        nome: 'Carlos Mestre',
-        perfil: 'professor',
-        email: 'carlos@parasurf.org',
-        telefone: '+55 27 98866-8868',
-        ativo: true,
-        criadoEm: now(),
-      },
-      {
-        id: uid(),
-        nome: 'Ana Surfista',
-        perfil: 'aluno',
-        email: 'ana@email.com',
-        telefone: '27 99999-0001',
-        ativo: true,
-        criadoEm: now(),
-      },
-      {
-        id: uid(),
-        nome: 'Bruno Estágio',
-        perfil: 'estagiario',
-        email: 'bruno@email.com',
-        telefone: '27 99999-0002',
-        ativo: true,
-        criadoEm: now(),
-      },
-      {
-        id: uid(),
-        nome: 'Cláudia Voluntária',
-        perfil: 'voluntario',
-        email: 'claudia@email.com',
-        telefone: '27 99999-0003',
-        ativo: true,
-        criadoEm: now(),
-      },
-    ],
-    aulas: [
-      {
-        id: uid(),
-        titulo: 'Surf Adaptado — Turma A',
-        data: new Date().toISOString().split('T')[0],
-        horario: '09:00',
-        local: 'Praia de Itaparica, Vila Velha',
-        professorId,
-        descricao: 'Aula prática de surf adaptado para iniciantes.',
-        status: 'agendada',
-        criadaEm: now(),
-      },
-    ],
-    confirmacoes: [],
-    avisos: [
-      {
-        id: uid(),
-        titulo: '🏄 Bem-vindos ao Instituto ParaSurf!',
-        mensagem: 'Olá, equipe! Bem-vindos ao nosso sistema de confirmação de presenças. Usem este app para confirmar sua presença nas aulas e receber avisos importantes.',
-        autorId: professorId,
-        urgente: false,
-        destinatarios: ['aluno', 'estagiario', 'voluntario'],
-        criadoEm: now(),
-      },
-      {
-        id: uid(),
-        titulo: '⚠️ Equipamentos obrigatórios',
-        mensagem: 'Lembrem-se: roupa de neoprene e protetor solar são obrigatórios. Tragam também garrafa de água.',
-        autorId: professorId,
-        urgente: true,
-        destinatarios: ['aluno', 'estagiario', 'voluntario'],
-        criadoEm: now(),
-      },
-    ],
-  };
-  return state;
-}
-
-export class Store {
-  private state: AppState;
-
-  constructor() {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        this.state = JSON.parse(saved);
-      } catch {
-        this.state = seed();
-        this.save();
-      }
-    } else {
-      this.state = seed();
-      this.save();
+// Estado inicial
+const initialState: AppState = {
+  usuarioLogado: null,
+  pessoas: [
+    USUARIO_PADRAO,
+    USUARIO_ADMIN,
+    {
+      id: 'aluno-demo',
+      nome: 'João Silva',
+      perfil: 'aluno',
+      email: 'joao@email.com',
+      telefone: '(27) 99999-1111',
+      ativo: true,
+      criadoEm: new Date().toISOString()
+    },
+    {
+      id: 'estagiario-demo',
+      nome: 'Maria Santos',
+      perfil: 'estagiario',
+      email: 'maria@email.com',
+      telefone: '(27) 99999-2222',
+      ativo: true,
+      criadoEm: new Date().toISOString()
     }
+  ],
+  aulas: [],
+  confirmacoes: [],
+  avisos: []
+};
+
+class Store {
+  private state: AppState = { ...initialState };
+  private listeners: Array<() => void> = [];
+
+  // Subscribe para atualizações
+  subscribe(listener: () => void) {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== listener);
+    };
   }
 
-  private save() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+  private notify() {
+    this.listeners.forEach(listener => listener());
   }
 
-  getState(): AppState { return this.state; }
+  // ===== LOGIN =====
+  login(nome: string, perfil: PerfilTipo, senha?: string): Pessoa | null {
+    console.log('Tentando login:', { nome, perfil, senha });
+    
+    // Busca pessoa pelo nome (case insensitive)
+    const pessoa = this.state.pessoas.find(
+      p => p.nome.toLowerCase() === nome.toLowerCase() && p.perfil === perfil && p.ativo
+    );
 
-  // --- AUTH ---
-  login(pessoaId: string): Pessoa | null {
-    const p = this.state.pessoas.find(x => x.id === pessoaId) || null;
-    this.state.usuarioLogado = p;
-    this.save();
-    return p;
+    console.log('Pessoa encontrada:', pessoa);
+
+    if (!pessoa) return null;
+
+    // Se for gestor (professor), verifica senha
+    if (perfil === 'professor') {
+      // Se não tem senha ou senha incorreta
+      if (!senha || SENHAS[pessoa.id] !== senha) {
+        console.log('Senha incorreta. Esperada:', SENHAS[pessoa.id], 'Recebida:', senha);
+        return null;
+      }
+    }
+
+    this.state.usuarioLogado = pessoa;
+    this.notify();
+    return pessoa;
   }
 
+  // Login por nome (para compatibilidade com código existente)
   loginByNome(nome: string, perfil: PerfilTipo): Pessoa | null {
-    const p = this.state.pessoas.find(x =>
-      x.nome.toLowerCase() === nome.toLowerCase() && x.perfil === perfil && x.ativo
-    ) || null;
-    this.state.usuarioLogado = p;
-    this.save();
-    return p;
+    console.log('loginByNome:', { nome, perfil });
+    
+    // Para perfis que não são gestor, login sem senha
+    if (perfil !== 'professor') {
+      const pessoa = this.state.pessoas.find(
+        p => p.nome.toLowerCase() === nome.toLowerCase() && p.perfil === perfil && p.ativo
+      );
+      if (pessoa) {
+        this.state.usuarioLogado = pessoa;
+        this.notify();
+        return pessoa;
+      }
+      return null;
+    }
+    return null; // Gestor precisa usar o login com senha
+  }
+
+  // Método específico para login com senha
+  loginComSenha(nome: string, perfil: PerfilTipo, senha: string): Pessoa | null {
+    return this.login(nome, perfil, senha);
+  }
+
+  // ===== ALTERAR SENHA =====
+  alterarSenha(pessoaId: string, senhaAtual: string, novaSenha: string): boolean {
+    // Verifica se a pessoa existe e é gestor
+    const pessoa = this.state.pessoas.find(p => p.id === pessoaId && p.perfil === 'professor');
+    if (!pessoa) return false;
+
+    // Verifica senha atual
+    if (SENHAS[pessoaId] !== senhaAtual) return false;
+
+    // Atualiza senha
+    SENHAS[pessoaId] = novaSenha;
+    return true;
+  }
+
+  // Versão simplificada para primeira alteração (sem verificar senha atual)
+  alterarSenhaPrimeiroAcesso(pessoaId: string, novaSenha: string): boolean {
+    const pessoa = this.state.pessoas.find(p => p.id === pessoaId && p.perfil === 'professor');
+    if (!pessoa) return false;
+    
+    SENHAS[pessoaId] = novaSenha;
+    return true;
+  }
+
+  // Verifica se é primeiro acesso (senha ainda é a padrão)
+  isPrimeiroAcesso(pessoaId: string): boolean {
+    return SENHAS[pessoaId] === '123456';
+  }
+
+  // ===== USUÁRIO =====
+  getUsuario(): Pessoa | null {
+    return this.state.usuarioLogado;
   }
 
   logout() {
     this.state.usuarioLogado = null;
-    this.save();
+    this.notify();
   }
 
-  getUsuario(): Pessoa | null { return this.state.usuarioLogado; }
-
-  // --- PESSOAS ---
+  // ===== PESSOAS =====
   getPessoas(perfil?: PerfilTipo): Pessoa[] {
-    if (perfil) return this.state.pessoas.filter(p => p.perfil === perfil && p.ativo);
+    if (perfil) {
+      return this.state.pessoas.filter(p => p.perfil === perfil && p.ativo);
+    }
     return this.state.pessoas.filter(p => p.ativo);
   }
 
-  addPessoa(dados: Omit<Pessoa, 'id' | 'criadoEm'>): Pessoa {
-    const p: Pessoa = { ...dados, id: uid(), criadoEm: now() };
-    this.state.pessoas.push(p);
-    this.save();
-    return p;
-  }
-
-  updatePessoa(id: string, dados: Partial<Pessoa>) {
-    const idx = this.state.pessoas.findIndex(p => p.id === id);
-    if (idx !== -1) {
-      this.state.pessoas[idx] = { ...this.state.pessoas[idx], ...dados };
-      this.save();
-    }
+  addPessoa(pessoa: Omit<Pessoa, 'id' | 'criadoEm'>) {
+    const nova: Pessoa = {
+      ...pessoa,
+      id: Date.now().toString(),
+      criadoEm: new Date().toISOString()
+    };
+    this.state.pessoas.push(nova);
+    this.notify();
   }
 
   deletePessoa(id: string) {
-    this.state.pessoas = this.state.pessoas.map(p =>
-      p.id === id ? { ...p, ativo: false } : p
-    );
-    this.save();
+    const index = this.state.pessoas.findIndex(p => p.id === id);
+    if (index !== -1) {
+      this.state.pessoas[index].ativo = false;
+      this.notify();
+    }
   }
 
-  // --- AULAS ---
-  getAulas(): Aula[] { return this.state.aulas; }
+  // ===== AULAS =====
+  getAulas(): Aula[] {
+    return this.state.aulas;
+  }
 
   getAulaAtiva(): Aula | null {
-    return this.state.aulas.find(a => a.status === 'agendada' || a.status === 'confirmada') || null;
+    return this.state.aulas.find(a => a.status === 'agendada') || null;
   }
 
-  addAula(dados: Omit<Aula, 'id' | 'criadaEm'>): Aula {
-    const a: Aula = { ...dados, id: uid(), criadaEm: now() };
-    this.state.aulas.push(a);
-    this.save();
-    return a;
+  addAula(aula: Omit<Aula, 'id' | 'criadaEm'>) {
+    const nova: Aula = {
+      ...aula,
+      id: Date.now().toString(),
+      criadaEm: new Date().toISOString()
+    };
+    this.state.aulas.push(nova);
+    this.notify();
   }
 
-  deleteAula(id: string) {
-    this.state.aulas = this.state.aulas.filter(a => a.id !== id);
-    this.state.confirmacoes = this.state.confirmacoes.filter(c => c.aulaId !== id);
-    this.save();
-  }
-
-  // --- CONFIRMAÇÕES ---
+  // ===== CONFIRMAÇÕES =====
   getConfirmacoes(aulaId: string): Confirmacao[] {
     return this.state.confirmacoes.filter(c => c.aulaId === aulaId);
   }
 
-  getConfirmacaoPessoa(aulaId: string, pessoaId: string): Confirmacao | null {
-    return this.state.confirmacoes.find(c => c.aulaId === aulaId && c.pessoaId === pessoaId) || null;
+  getConfirmacaoPessoa(aulaId: string, pessoaId: string): Confirmacao | undefined {
+    return this.state.confirmacoes.find(c => c.aulaId === aulaId && c.pessoaId === pessoaId);
   }
 
-  confirmar(aulaId: string, pessoaId: string, status: 'confirmado' | 'nao_vai', obs?: string) {
-    const existing = this.state.confirmacoes.findIndex(
+  confirmar(aulaId: string, pessoaId: string, status: 'confirmado' | 'nao_vai') {
+    const existente = this.state.confirmacoes.find(
       c => c.aulaId === aulaId && c.pessoaId === pessoaId
     );
-    const entry: Confirmacao = {
-      id: existing >= 0 ? this.state.confirmacoes[existing].id : uid(),
-      aulaId, pessoaId, status,
-      observacao: obs,
-      atualizadoEm: now(),
-    };
-    if (existing >= 0) {
-      this.state.confirmacoes[existing] = entry;
+
+    if (existente) {
+      existente.status = status;
+      existente.atualizadoEm = new Date().toISOString();
     } else {
-      this.state.confirmacoes.push(entry);
+      this.state.confirmacoes.push({
+        id: Date.now().toString(),
+        aulaId,
+        pessoaId,
+        status,
+        atualizadoEm: new Date().toISOString()
+      });
     }
-    this.save();
-    return entry;
+    this.notify();
   }
 
   deleteConfirmacao(aulaId: string, pessoaId: string) {
     this.state.confirmacoes = this.state.confirmacoes.filter(
       c => !(c.aulaId === aulaId && c.pessoaId === pessoaId)
     );
-    this.save();
+    this.notify();
   }
 
-  // --- AVISOS ---
+  // ===== AVISOS =====
   getAvisos(perfil?: PerfilTipo): Aviso[] {
-    if (!perfil) return this.state.avisos;
-    return this.state.avisos.filter(a => a.destinatarios.includes(perfil) || a.destinatarios.includes('professor' as PerfilTipo));
+    if (perfil) {
+      return this.state.avisos
+        .filter(a => a.destinatarios.includes(perfil))
+        .sort((a, b) => new Date(b.criadoEm).getTime() - new Date(a.criadoEm).getTime());
+    }
+    return this.state.avisos.sort((a, b) => new Date(b.criadoEm).getTime() - new Date(a.criadoEm).getTime());
   }
 
-  addAviso(dados: Omit<Aviso, 'id' | 'criadoEm'>): Aviso {
-    const a: Aviso = { ...dados, id: uid(), criadoEm: now() };
-    this.state.avisos.unshift(a);
-    this.save();
-    return a;
+  addAviso(aviso: Omit<Aviso, 'id' | 'criadoEm'>) {
+    const novo: Aviso = {
+      ...aviso,
+      id: Date.now().toString(),
+      criadoEm: new Date().toISOString()
+    };
+    this.state.avisos.push(novo);
+    this.notify();
   }
 
   deleteAviso(id: string) {
     this.state.avisos = this.state.avisos.filter(a => a.id !== id);
-    this.save();
+    this.notify();
   }
 }
 
