@@ -35,3 +35,9 @@ export async function deleteConfirmacao(aulaId: string, pessoaId: string) { retu
 export async function getAvisos(perfil?: string) { return req('GET', '/avisos' + (perfil ? `?perfil=${perfil}` : '')); }
 export async function addAviso(d: any) { return req('POST', '/avisos', d); }
 export async function deleteAviso(id: string) { return req('DELETE', `/avisos/${id}`); }
+
+export async function getEquipes(aulaId: string) { return req('GET', `/equipes/${aulaId}`); }
+export async function getMinhaEquipe(aulaId: string, pessoaId: string) { return req('GET', `/equipes/minha/${aulaId}/${pessoaId}`); }
+export async function addEquipe(d: any) { return req('POST', '/equipes', d); }
+export async function updateEquipe(id: string, d: any) { return req('PUT', `/equipes/${id}`, d); }
+export async function deleteEquipe(id: string) { return req('DELETE', `/equipes/${id}`); }

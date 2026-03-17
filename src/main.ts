@@ -66,11 +66,14 @@ function showPage(id: string) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById(id)?.classList.add('active');
+  window.scrollTo(0, 0);
   document.querySelector(`.nav-item[data-page="${id}"]`)?.classList.add('active');
   if (id === 'page-home')        renderHome();
   if (id === 'page-avisos')      renderAvisos();
   if (id === 'page-confirmacao') renderConfirmacao();
   if (id === 'page-cadastro')    renderCadastro();
+  if (id === "page-equipes") { renderEquipes(); const h = document.querySelector(".hero-strip") as HTMLElement; if(h) h.style.display="none"; }
+  else { const h = document.querySelector(".hero-strip") as HTMLElement; if(h) h.style.display=""; }
 }
 
 // ==============================================
@@ -502,6 +505,11 @@ function setupForms() {
   });
 
   // Novo cadastro
+  const cadPerfil = document.getElementById('cad-perfil') as HTMLSelectElement;
+  cadPerfil?.addEventListener('change', () => {
+    const wrap = document.getElementById('cad-senha-wrap');
+    if (wrap) wrap.style.display = cadPerfil.value === 'gestor' ? 'block' : 'none';
+  });
   document.getElementById('btn-salvar-pessoa')?.addEventListener('click', async () => {
     const nome   = (document.getElementById('cad-nome') as HTMLInputElement)?.value?.trim();
     const perfil = (document.getElementById('cad-perfil') as HTMLSelectElement)?.value;
@@ -568,8 +576,322 @@ function setupNav() {
 
 document.addEventListener('DOMContentLoaded', () => {
   setupForms();
+  setupEquipeForm();
   setupNav();
   const u = api.getUsuario();
   if (u) initApp();
   else showLoginScreen();
 });
+// ==============================================
+// EQUIPES
+// ==============================================
+async function renderEquipes() {
+  const u = api.getUsuario();
+  if (!u) return;
+  const container = document.getElementById('equipes-content');
+  const fab = document.getElementById('fab-equipe');
+  const sub = document.getElementById('equipes-sub');
+  if (!container) return;
+  if (fab) fab.style.display = u.perfil === 'gestor' ? 'flex' : 'none';
+  setLoading(container);
+
+  try {
+    const aula = await api.getAulaAtiva();
+    if (!aula) {
+      container.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Nenhuma aula ativa</div><div class="empty-sub">Agende uma aula primeiro.</div></div>`;
+      return;
+    }
+    if (sub) sub.textContent = `Equipes da aula: ${aula.titulo}`;
+
+    if (u.perfil !== "gestor") {
+      const heroStrip = document.querySelector(".hero-strip") as HTMLElement;
+      if (heroStrip) heroStrip.style.display = "none";
+      // Mostra apenas a equipe do usuário
+      const minhaEquipe = await api.getMinhaEquipe(aula.id, u.id);
+      if (!minhaEquipe) {
+        container.innerHTML = `<div class="empty-state"><div class="empty-icon">🤝</div><div class="empty-text">Você ainda não foi alocado</div><div class="empty-sub">Aguarde o gestor montar as equipes.</div></div>`;
+        return;
+      }
+      container.innerHTML = renderEquipeCard(minhaEquipe, u, aula);
+      return;
+    }
+
+    // Gestor vê todas as equipes
+    const equipes = await api.getEquipes(aula.id);
+
+    // Quem confirmou mas não está em equipe
+    const todasPessoas = await api.getPessoas();
+    const confirmados = todasPessoas.filter((c: any) => c.perfil !== "gestor");
+    const alocados = new Set(equipes.flatMap((e: any) => e.membros.map((m: any) => m.pessoa_id)));
+    const semEquipe = confirmados.filter((c: any) => !alocados.has(c.pessoa_id));
+
+    let html = '';
+
+    if (semEquipe.length) {
+      html += `<div class="card" style="margin:8px 16px;border-left:4px solid var(--sun);">
+        <div class="card-title">⚠️ Confirmados sem equipe — ${semEquipe.length}</div>`;
+      for (const c of semEquipe) {
+        const emoji = c.perfil === 'aluno' ? '🏄' : c.perfil === 'estagiario' ? '📋' : '🤝';
+        html += `<div class="person-row">
+          <div class="avatar avatar-${c.perfil}" style="font-size:18px;">${emoji}</div>
+          <div class="person-info"><div class="person-name">${c.nome}</div><div class="person-sub">${c.perfil}</div></div>
+        </div>`;
+      }
+      html += `</div>`;
+    }
+
+    if (!equipes.length) {
+      html += `<div class="empty-state"><div class="empty-icon">🤝</div><div class="empty-text">Nenhuma equipe criada</div><div class="empty-sub">Clique em + para montar a primeira equipe.</div></div>`;
+    } else {
+      for (const eq of equipes) {
+        html += renderEquipeCard(eq, u, aula);
+      }
+    }
+    container.innerHTML = html;
+  } catch(e: any) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><div class="empty-text">${e.message}</div></div>`;
+  }
+}
+
+function renderEquipeCard(eq: any, u: any, aula: any): string {
+  const alunos = eq.membros.filter((m: any) => m.papel === 'aluno');
+  const estagiarios = eq.membros.filter((m: any) => m.papel === 'estagiario');
+  const voluntarios = eq.membros.filter((m: any) => m.papel === 'voluntario');
+  const isGestor = u.perfil === 'gestor';
+  const isEstagiario = u.perfil === 'estagiario';
+
+  return `<div class="card" style="margin:8px 16px;border-left:4px solid var(--wave);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <div style="font-family:var(--font-display);font-size:20px;">🤝 ${eq.nome}</div>
+      <div style="display:flex;gap:6px;">
+        ${isEstagiario ? `<button class="btn btn-primary btn-sm" onclick="gerarPDF('${eq.id}','${aula.id}')">📄 PDF</button>` : ''}
+        ${isGestor ? `
+          <button class="btn btn-primary btn-sm" onclick="editarEquipe('${eq.id}','${aula.id}')">✏️</button>
+          <button class="btn btn-danger btn-sm" onclick="doDeleteEquipe('${eq.id}')">🗑</button>
+          <button class="btn btn-success btn-sm" onclick="gerarPDF('${eq.id}','${aula.id}')">📄 PDF</button>
+        ` : ''}
+      </div>
+    </div>
+    ${alunos.length ? `<div class="card-title">🏄 Alunos (${alunos.length})</div>
+      ${alunos.map((m: any) => `<div class="person-row">
+        <div class="avatar avatar-aluno" style="width:36px;height:36px;font-size:13px;">${m.nome.split(' ').map((w:any)=>w[0]).slice(0,2).join('').toUpperCase()}</div>
+        <div class="person-info"><div class="person-name">${m.nome}</div></div>
+      </div>`).join('')}` : ''}
+    ${estagiarios.length ? `<div class="card-title" style="margin-top:10px;">📋 Estagiários (${estagiarios.length})</div>
+      ${estagiarios.map((m: any) => `<div class="person-row">
+        <div class="avatar avatar-estagiario" style="width:36px;height:36px;font-size:13px;">${m.nome.split(' ').map((w:any)=>w[0]).slice(0,2).join('').toUpperCase()}</div>
+        <div class="person-info"><div class="person-name">${m.nome}</div></div>
+      </div>`).join('')}` : ''}
+    ${voluntarios.length ? `<div class="card-title" style="margin-top:10px;">🤝 Voluntários (${voluntarios.length})</div>
+      ${voluntarios.map((m: any) => `<div class="person-row">
+        <div class="avatar avatar-voluntario" style="width:36px;height:36px;font-size:13px;">${m.nome.split(' ').map((w:any)=>w[0]).slice(0,2).join('').toUpperCase()}</div>
+        <div class="person-info"><div class="person-name">${m.nome}</div></div>
+      </div>`).join('')}` : ''}
+  </div>`;
+}
+
+// Abrir modal para nova equipe
+(window as any).abrirNovaEquipe = async function(aulaId: string) {
+  (document.getElementById('equipe-edit-id') as HTMLInputElement).value = '';
+  (document.getElementById('equipe-nome') as HTMLInputElement).value = '';
+  const title = document.getElementById('modal-equipe-title');
+  if (title) title.textContent = '🤝 Nova Equipe';
+  await carregarMembrosSeletor(aulaId, []);
+  openModal('modal-nova-equipe');
+};
+
+// Abrir modal para editar equipe
+(window as any).editarEquipe = async function(equipeId: string, aulaId: string) {
+  try {
+    const equipes = await api.getEquipes(aulaId);
+    const eq = equipes.find((e: any) => e.id === equipeId);
+    if (!eq) return;
+    (document.getElementById('equipe-edit-id') as HTMLInputElement).value = equipeId;
+    (document.getElementById('equipe-nome') as HTMLInputElement).value = eq.nome;
+    const title = document.getElementById('modal-equipe-title');
+    if (title) title.textContent = '✏️ Editar Equipe';
+    await carregarMembrosSeletor(aulaId, eq.membros.map((m: any) => m.pessoa_id));
+    openModal('modal-nova-equipe');
+  } catch(e: any) { toast('❌ ' + e.message, false); }
+};
+
+async function carregarMembrosSeletor(aulaId: string, selecionados: string[]) {
+  const lista = document.getElementById('equipe-membros-lista');
+  if (!lista) return;
+  lista.innerHTML = '<div style="padding:10px;color:var(--text-light);">Carregando...</div>';
+  try {
+    const todasPessoas = await api.getPessoas();
+    const confirmados = todasPessoas.filter((c: any) => c.perfil !== "gestor");
+    if (!confirmados.length) {
+      lista.innerHTML = '<div style="padding:10px;color:var(--text-light);">Nenhum confirmado ainda.</div>';
+      return;
+    }
+    const grupos: Record<string, any[]> = { aluno: [], estagiario: [], voluntario: [] };
+    for (const c of confirmados) {
+      if (grupos[c.perfil]) grupos[c.perfil].push(c);
+    }
+    const labels: Record<string, string> = { aluno: '🏄 Alunos', estagiario: '📋 Estagiários', voluntario: '🤝 Voluntários' };
+    let html = '';
+    for (const [perfil, pessoas] of Object.entries(grupos)) {
+      if (!pessoas.length) continue;
+      html += `<div style="font-weight:800;font-size:12px;text-transform:uppercase;color:var(--text-light);margin:12px 0 6px;">${labels[perfil]}</div>`;
+      for (const p of pessoas) {
+        const checked = selecionados.includes(p.id) ? 'checked' : '';
+        html += `<label style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;cursor:pointer;margin-bottom:4px;background:var(--page-bg);">
+          <input type="checkbox" value="${p.id}" data-perfil="${perfil}" ${checked} style="width:18px;height:18px;">
+          <span>${p.nome}</span>
+        </label>`;
+      }
+    }
+    lista.innerHTML = html;
+  } catch(e: any) { lista.innerHTML = `<div style="color:red;">${e.message}</div>`; }
+}
+
+(window as any).doDeleteEquipe = async function(id: string) {
+  if (!confirm('Excluir esta equipe?')) return;
+  try {
+    await api.deleteEquipe(id);
+    toast('🗑 Equipe excluída.');
+    renderEquipes();
+  } catch(e: any) { toast('❌ ' + e.message, false); }
+};
+
+// PDF lista de presença
+(window as any).gerarPDF = async function(equipeId: string, aulaId: string) {
+  try {
+    const [equipes, aulaResp] = await Promise.all([
+      api.getEquipes(aulaId),
+      api.getAulaAtiva()
+    ]);
+    const eq = equipes.find((e: any) => e.id === equipeId);
+    const aula = aulaResp;
+    if (!eq || !aula) { toast('❌ Dados não encontrados', false); return; }
+
+    const alunos = eq.membros.filter((m: any) => m.papel === 'aluno');
+    const estagiarios = eq.membros.filter((m: any) => m.papel === 'estagiario');
+    const voluntarios = eq.membros.filter((m: any) => m.papel === 'voluntario');
+
+    const dataFormatada = new Date(aula.data).toLocaleDateString('pt-BR', { day:'2-digit', month:'long', year:'numeric' });
+
+    const linhasAlunos = alunos.map((a: any, i: number) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${a.nome}</td>
+        <td style="border-bottom:1px solid #ccc;min-width:180px;">&nbsp;</td>
+      </tr>`).join('');
+
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+    <title>Lista de Presença — ${eq.nome}</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 30px; color: #111; max-width: 800px; margin: 0 auto; }
+      .header { text-align: center; border-bottom: 3px solid #0a2540; padding-bottom: 20px; margin-bottom: 24px; }
+      .header img { height: 80px; margin-bottom: 10px; }
+      .header h1 { font-size: 22px; margin: 0; color: #0a2540; }
+      .header h2 { font-size: 16px; margin: 6px 0 0; font-weight: normal; color: #555; }
+      .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 24px; background: #f5f8ff; padding: 16px; border-radius: 8px; }
+      .info-item label { font-size: 11px; text-transform: uppercase; color: #777; display: block; }
+      .info-item span { font-weight: bold; font-size: 15px; }
+      .equipe-info { background: #0a2540; color: white; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; }
+      .equipe-info h3 { margin: 0 0 8px; font-size: 16px; }
+      .equipe-membros { font-size: 13px; opacity: 0.85; }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+      th { background: #0a2540; color: white; padding: 10px 12px; text-align: left; font-size: 13px; }
+      td { padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 14px; }
+      tr:nth-child(even) td { background: #f9f9f9; }
+      .assinatura-area { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+      .assinatura-box { text-align: center; }
+      .assinatura-linha { border-top: 1px solid #333; margin-bottom: 6px; margin-top: 50px; }
+      .assinatura-label { font-size: 12px; color: #555; }
+      .rodape { margin-top: 40px; text-align: center; font-size: 11px; color: #aaa; border-top: 1px solid #eee; padding-top: 12px; }
+      @media print { body { padding: 10px; } }
+    </style></head><body>
+    <div class="header">
+      <img src="/logo parasurf.jpeg" alt="Instituto ParaSurf" onerror="this.style.display='none'">
+      <h1>Instituto ParaSurf</h1>
+      <h2>Lista de Presença — Surf Adaptado</h2>
+    </div>
+    <div class="info-grid">
+      <div class="info-item"><label>Aula</label><span>${aula.titulo}</span></div>
+      <div class="info-item"><label>Data</label><span>${dataFormatada}</span></div>
+      <div class="info-item"><label>Horário</label><span>${String(aula.horario).slice(0,5)}</span></div>
+      <div class="info-item"><label>Local</label><span>${aula.local}</span></div>
+    </div>
+    <div class="equipe-info">
+      <h3>🤝 ${eq.nome}</h3>
+      <div class="equipe-membros">
+        ${estagiarios.map((e: any) => `📋 ${e.nome}`).join(' &nbsp;|&nbsp; ')}
+        ${voluntarios.length ? '&nbsp;&nbsp;' + voluntarios.map((v: any) => `🤝 ${v.nome}`).join(' &nbsp;|&nbsp; ') : ''}
+      </div>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>Nome do Aluno</th><th>Assinatura</th></tr></thead>
+      <tbody>${linhasAlunos || '<tr><td colspan="3" style="text-align:center;color:#aaa;">Nenhum aluno nesta equipe</td></tr>'}</tbody>
+    </table>
+    <div class="assinatura-area">
+      ${estagiarios.map((e: any) => `
+        <div class="assinatura-box">
+          <div class="assinatura-linha"></div>
+          <div class="assinatura-label">${e.nome}<br>Estagiário(a)</div>
+        </div>`).join('')}
+      <div class="assinatura-box">
+        <div class="assinatura-linha"></div>
+        <div class="assinatura-label">Responsável / Gestor<br>Instituto ParaSurf</div>
+      </div>
+    </div>
+    <div class="rodape">Instituto ParaSurf · Vila Velha, ES · +55 27 98866-8868 · Gerado em ${new Date().toLocaleString('pt-BR')}</div>
+    <script>window.onload = () => window.print();<\/script>
+    </body></html>`;
+
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+  } catch(e: any) { toast('❌ Erro ao gerar PDF: ' + e.message, false); }
+};
+
+// Setup form equipe
+function setupEquipeForm() {
+  document.getElementById('btn-salvar-equipe')?.addEventListener('click', async () => {
+    const nome = (document.getElementById('equipe-nome') as HTMLInputElement)?.value?.trim();
+    const editId = (document.getElementById('equipe-edit-id') as HTMLInputElement)?.value;
+    if (!nome) { toast('⚠️ Digite o nome da equipe', false); return; }
+
+    const checkboxes = document.querySelectorAll('#equipe-membros-lista input[type=checkbox]:checked');
+    const membros = Array.from(checkboxes).map((cb: any) => ({
+      pessoa_id: cb.value,
+      papel: (cb as HTMLElement).getAttribute("data-perfil")
+    }));
+    if (!membros.length) { toast('⚠️ Selecione ao menos um membro', false); return; }
+
+    try {
+      const aula = await api.getAulaAtiva();
+      if (!aula) { toast('⚠️ Nenhuma aula ativa', false); return; }
+
+      if (editId) {
+        await api.updateEquipe(editId, { nome, membros });
+        toast('✅ Equipe atualizada!');
+      } else {
+        await api.addEquipe({ nome, aula_id: aula.id, membros });
+        toast('✅ Equipe criada!');
+      }
+      closeModal('modal-nova-equipe');
+      renderEquipes();
+    } catch(e: any) { toast('❌ ' + e.message, false); }
+  });
+
+  // FAB equipe
+  document.getElementById('fab-equipe')?.addEventListener('click', async () => {
+    const aula = await api.getAulaAtiva();
+    if (!aula) { toast('⚠️ Nenhuma aula ativa', false); return; }
+    (window as any).abrirNovaEquipe(aula.id);
+  });
+  // Sobrescrever o onclick do FAB
+  const fab = document.getElementById('fab-equipe');
+  if (fab) {
+    fab.removeAttribute('onclick');
+    fab.addEventListener('click', async () => {
+      const aula = await api.getAulaAtiva();
+      if (!aula) { toast('⚠️ Nenhuma aula ativa', false); return; }
+      (window as any).abrirNovaEquipe(aula.id);
+    });
+  }
+}

@@ -25,7 +25,6 @@ pool.connect((err) => {
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'dist')));
 
 function auth(req, res, next) {
   const token = req.headers['authorization']?.split(' ')[1];
@@ -34,6 +33,9 @@ function auth(req, res, next) {
   catch { return res.status(401).json({ error: 'Token inválido' }); }
 }
 
+// =============================================
+// AUTH
+// =============================================
 app.post('/api/login', async (req, res) => {
   const { nome, perfil, senha } = req.body;
   if (!nome || !perfil) return res.status(400).json({ error: 'Dados incompletos' });
@@ -71,6 +73,9 @@ app.post('/api/trocar-senha', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'Erro ao trocar senha' }); }
 });
 
+// =============================================
+// PESSOAS
+// =============================================
 app.get('/api/pessoas', auth, async (req, res) => {
   const { perfil } = req.query;
   try {
@@ -85,12 +90,18 @@ app.get('/api/pessoas', auth, async (req, res) => {
 
 app.post('/api/pessoas', auth, async (req, res) => {
   if (req.user.perfil !== 'gestor') return res.status(403).json({ error: 'Apenas gestores podem cadastrar' });
-  const { nome, perfil, email, telefone } = req.body;
+  const { nome, perfil, email, telefone, senha } = req.body;
   if (!nome || !perfil) return res.status(400).json({ error: 'Nome e perfil obrigatórios' });
   try {
+    let senhaHash = null;
+    let primeiroAcesso = true;
+    if (perfil === 'gestor' && senha) {
+      senhaHash = await bcrypt.hash(senha, 10);
+      primeiroAcesso = false;
+    }
     const r = await pool.query(
-      `INSERT INTO pessoas (nome,perfil,email,telefone,ativo) VALUES ($1,$2,$3,$4,TRUE) RETURNING id,nome,perfil,email,telefone`,
-      [nome, perfil, email||`${nome.toLowerCase().replace(/\s+/g,'.')}@email.com`, telefone||'(27) 99999-9999']
+      `INSERT INTO pessoas (nome,perfil,email,telefone,ativo,senha_hash,primeiro_acesso) VALUES ($1,$2,$3,$4,TRUE,$5,$6) RETURNING id,nome,perfil,email,telefone`,
+      [nome, perfil, email||`${nome.toLowerCase().replace(/\s+/g,'.')}@email.com`, telefone||'(27) 99999-9999', senhaHash, primeiroAcesso]
     );
     res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: 'Erro ao cadastrar' }); }
@@ -104,6 +115,9 @@ app.delete('/api/pessoas/:id', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'Erro ao remover' }); }
 });
 
+// =============================================
+// AULAS
+// =============================================
 app.get('/api/aulas', auth, async (req, res) => {
   try {
     const r = await pool.query(`SELECT * FROM aulas ORDER BY data DESC, horario DESC`);
@@ -139,6 +153,9 @@ app.delete('/api/aulas/:id', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'Erro ao remover aula' }); }
 });
 
+// =============================================
+// CONFIRMAÇÕES
+// =============================================
 app.get('/api/confirmacoes/:aulaId', auth, async (req, res) => {
   try {
     const r = await pool.query(
@@ -169,6 +186,9 @@ app.delete('/api/confirmacoes/:aulaId/:pessoaId', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'Erro ao deletar confirmação' }); }
 });
 
+// =============================================
+// AVISOS
+// =============================================
 app.get('/api/avisos', auth, async (req, res) => {
   const { perfil } = req.query;
   try {
@@ -202,6 +222,103 @@ app.delete('/api/avisos/:id', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'Erro ao deletar aviso' }); }
 });
 
+// =============================================
+// EQUIPES — /minha ANTES de /:aulaId
+// =============================================
+app.get('/api/equipes/minha/:aulaId/:pessoaId', auth, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT e.* FROM equipes e
+       JOIN equipe_membros em ON em.equipe_id=e.id
+       WHERE e.aula_id=$1 AND em.pessoa_id=$2 LIMIT 1`,
+      [req.params.aulaId, req.params.pessoaId]
+    );
+    if (!r.rows.length) return res.json(null);
+    const membros = await pool.query(
+      `SELECT em.*, p.nome, p.perfil FROM equipe_membros em
+       JOIN pessoas p ON em.pessoa_id=p.id WHERE em.equipe_id=$1 ORDER BY em.papel, p.nome`,
+      [r.rows[0].id]
+    );
+    res.json({ ...r.rows[0], membros: membros.rows });
+  } catch (e) { res.status(500).json({ error: 'Erro ao buscar equipe' }); }
+});
+
+app.get('/api/equipes/:aulaId', auth, async (req, res) => {
+  try {
+    const equipes = await pool.query(
+      `SELECT * FROM equipes WHERE aula_id=$1 ORDER BY criado_em`,
+      [req.params.aulaId]
+    );
+    for (const eq of equipes.rows) {
+      const membros = await pool.query(
+        `SELECT em.*, p.nome, p.perfil, p.telefone
+         FROM equipe_membros em JOIN pessoas p ON em.pessoa_id=p.id
+         WHERE em.equipe_id=$1 ORDER BY em.papel, p.nome`,
+        [eq.id]
+      );
+      eq.membros = membros.rows;
+    }
+    res.json(equipes.rows);
+  } catch (e) { res.status(500).json({ error: 'Erro ao buscar equipes' }); }
+});
+
+app.post('/api/equipes', auth, async (req, res) => {
+  if (req.user.perfil !== 'gestor') return res.status(403).json({ error: 'Apenas gestores' });
+  const { nome, aula_id, membros } = req.body;
+  if (!nome || !aula_id || !membros?.length) return res.status(400).json({ error: 'Dados incompletos' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const eq = await client.query(
+      `INSERT INTO equipes (nome, aula_id) VALUES ($1,$2) RETURNING *`,
+      [nome, aula_id]
+    );
+    for (const m of membros) {
+      await client.query(
+        `INSERT INTO equipe_membros (equipe_id, pessoa_id, papel) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
+        [eq.rows[0].id, m.pessoa_id, m.papel]
+      );
+    }
+    await client.query('COMMIT');
+    res.json(eq.rows[0]);
+  } catch (e) { await client.query('ROLLBACK'); res.status(500).json({ error: 'Erro ao criar equipe' }); }
+  finally { client.release(); }
+});
+
+app.put('/api/equipes/:id', auth, async (req, res) => {
+  if (req.user.perfil !== 'gestor') return res.status(403).json({ error: 'Apenas gestores' });
+  const { nome, membros } = req.body;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    if (nome) await client.query(`UPDATE equipes SET nome=$1, atualizado_em=NOW() WHERE id=$2`, [nome, req.params.id]);
+    if (membros) {
+      await client.query(`DELETE FROM equipe_membros WHERE equipe_id=$1`, [req.params.id]);
+      for (const m of membros) {
+        await client.query(
+          `INSERT INTO equipe_membros (equipe_id, pessoa_id, papel) VALUES ($1,$2,$3)`,
+          [req.params.id, m.pessoa_id, m.papel]
+        );
+      }
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (e) { await client.query('ROLLBACK'); res.status(500).json({ error: 'Erro ao atualizar equipe' }); }
+  finally { client.release(); }
+});
+
+app.delete('/api/equipes/:id', auth, async (req, res) => {
+  if (req.user.perfil !== 'gestor') return res.status(403).json({ error: 'Apenas gestores' });
+  try {
+    await pool.query(`DELETE FROM equipes WHERE id=$1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: 'Erro ao deletar equipe' }); }
+});
+
+// =============================================
+// STATIC + SPA FALLBACK — SEMPRE POR ÚLTIMO
+// =============================================
+app.use(express.static(path.join(__dirname, 'dist')));
 app.get('/{*path}', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });

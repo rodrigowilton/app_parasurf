@@ -143,11 +143,21 @@
     <button class="nav-item active" data-page="page-home"><span class="nav-icon">🏠</span><span>Início</span></button>
     <button class="nav-item" data-page="page-avisos" id="nav-avisos"><span class="nav-icon">📢</span><span>Avisos</span></button>
     <button class="nav-item" data-page="page-confirmacao" id="nav-confirmacao"><span class="nav-icon">✅</span><span>Confirmar</span></button>
+    <button class="nav-item" data-page="page-equipes" id="nav-equipes"><span class="nav-icon">👥</span><span>Equipes</span></button>
     <button class="nav-item" data-page="page-cadastro" id="nav-cadastro"><span class="nav-icon">👥</span><span>Cadastro</span></button>
   </nav>
+
+  <div class="page" id="page-equipes">
+    <div class="section-title" style="padding-top:8px;">🤝 Equipes</div>
+    <div class="section-sub" id="equipes-sub">Monte as equipes da aula.</div>
+    <div id="equipes-content"></div>
+    <button class="fab" id="fab-equipe" onclick="openModal('modal-nova-equipe')" title="Nova Equipe" style="display:none;">➕</button>
+  </div>
+
 </div>
 
-<!-- MODAL DE ALTERAR SENHA -->
+
+  <!-- MODAL DE ALTERAR SENHA -->
 <div class="modal-overlay" id="modal-senha">
   <div class="modal-sheet">
     <div class="modal-title">🔐 Alterar Senha</div>
@@ -195,6 +205,10 @@
         <option value="voluntario">🤝 Voluntário</option>
         <option value="gestor">🏢 Gestor</option>
       </select>
+    </div>
+    <div class="form-group" id="cad-senha-wrap" style="display:none;">
+      <label class="form-label">Senha (obrigatório para Gestor)</label>
+      <input class="form-input" id="cad-senha" type="password" placeholder="Mínimo 6 caracteres" />
     </div>
     <button class="btn btn-primary btn-full" id="btn-salvar-pessoa">✅ Cadastrar</button>
   </div>
@@ -263,4 +277,21 @@
   });
 </script>
 </body>
-</html>
+</html><script>document.body.insertAdjacentHTML('beforeend', `
+<div class="modal-overlay" id="modal-nova-equipe">
+  <div class="modal-sheet" style="max-height:90vh;overflow-y:auto;">
+    <button class="modal-close" onclick="closeModal('modal-nova-equipe')">✕</button>
+    <div class="modal-title" id="modal-equipe-title">🤝 Nova Equipe</div>
+    <input type="hidden" id="equipe-edit-id" value="">
+    <div class="form-group">
+      <label class="form-label">Nome da Equipe</label>
+      <input class="form-input" id="equipe-nome" type="text" placeholder="Ex: Equipe Ondas" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">👥 Selecionar Membros</label>
+      <div id="equipe-membros-lista" style="max-height:300px;overflow-y:auto;"></div>
+    </div>
+    <button class="btn btn-primary btn-full" id="btn-salvar-equipe">✅ Salvar Equipe</button>
+  </div>
+</div>
+`);</script>
