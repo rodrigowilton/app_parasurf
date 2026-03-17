@@ -1,29 +1,31 @@
 # Dependências
 node_modules/
-.pnp
-.pnp.js
 
-# Produção / Build
+# Build
 dist/
-build/
 
-# Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Variáveis de ambiente (Segurança)
+# Ambiente (NUNCA subir para o git)
 .env
 .env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.production
 
-# Editor (VS Code, etc)
+# PM2
+.pm2/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# TypeScript
+*.tsbuildinfo
+
+# Editor
 .vscode/
 .idea/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+*.swp
+*.swo

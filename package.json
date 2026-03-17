@@ -14,7 +14,14 @@
     "@capacitor/haptics": "^6.0.0",
     "@capacitor/keyboard": "^6.0.0",
     "@capacitor/status-bar": "^6.0.0",
-    "serve": "^14.2.3"
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.20.0",
+    "serve": "^14.2.3",
+    "vary": "^1.1.2"
   },
   "devDependencies": {
     "@capacitor/cli": "^6.0.0",

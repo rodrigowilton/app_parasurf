@@ -1,119 +1,128 @@
 // =============================================
 // Instituto ParaSurf — Main App Controller
+// Versão com backend PostgreSQL
 // =============================================
-import { store } from './app/services/store';
-import type { PerfilTipo, Pessoa } from './app/models';
+import * as api from './app/services/api';
+
+type PerfilTipo = 'gestor' | 'aluno' | 'estagiario' | 'voluntario';
 
 // ---- Helpers ----
 function fmt(date: string): string {
   try {
-    return new Date(date).toLocaleDateString('pt-BR', { day:'2-digit', month:'short', year:'numeric' });
+    const d = new Date(date);
+    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
   } catch { return date; }
 }
-function fmtTime(date: string): string {
-  try {
-    return new Date(date).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
-  } catch { return ''; }
+function perfilLabel(p: string): string {
+  const map: Record<string, string> = { gestor: 'Gestor', aluno: 'Aluno', estagiario: 'Estagiário', voluntario: 'Voluntário' };
+  return map[p] || p;
 }
-function perfilLabel(p: PerfilTipo): string {
-  const map: Record<PerfilTipo,string> = { professor:'Gestor', aluno:'Aluno', estagiario:'Estagiário', voluntario:'Voluntário' };
-  return map[p];
-}
-function perfilEmoji(p: PerfilTipo): string {
-  const map: Record<PerfilTipo,string> = { professor:'🏢', aluno:'🏄', estagiario:'📋', voluntario:'🤝' };
-  return map[p];
+function perfilEmoji(p: string): string {
+  const map: Record<string, string> = { gestor: '🏢', aluno: '🏄', estagiario: '📋', voluntario: '🤝' };
+  return map[p] || '👤';
 }
 function initials(name: string): string {
-  return name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  return name.split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase();
+}
+function fmtDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+  } catch { return iso; }
+}
+function fmtTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  } catch { return ''; }
 }
 
 // ---- Toast ----
-function toast(msg: string) {
+function toast(msg: string, ok = true) {
   let el = document.getElementById('toast');
   if (!el) {
     el = document.createElement('div');
     el.id = 'toast';
-    el.className = 'toast';
     document.body.appendChild(el);
   }
   el.textContent = msg;
-  el.classList.add('show');
-  setTimeout(() => el!.classList.remove('show'), 2800);
+  el.className = 'toast show';
+  el.style.background = ok ? 'var(--ocean-deep, #0a2540)' : '#c62828';
+  clearTimeout((el as any)._t);
+  (el as any)._t = setTimeout(() => el!.classList.remove('show'), 2800);
+}
+
+// ---- Modal ----
+function openModal(id: string) { document.getElementById(id)?.classList.add('open'); }
+function closeModal(id: string) { document.getElementById(id)?.classList.remove('open'); }
+(window as any).openModal = openModal;
+(window as any).closeModal = closeModal;
+
+// ---- Loading ----
+function setLoading(container: HTMLElement | null, msg = 'Carregando...') {
+  if (container) container.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">${msg}</div></div>`;
 }
 
 // ---- Navigation ----
 function showPage(id: string) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  const page = document.getElementById(id);
-  if (page) page.classList.add('active');
-  const nav = document.querySelector(`.nav-item[data-page="${id}"]`);
-  if (nav) nav.classList.add('active');
-  // Render dynamic content
-  if (id === 'page-home') renderHome();
-  if (id === 'page-avisos') renderAvisos();
+  document.getElementById(id)?.classList.add('active');
+  document.querySelector(`.nav-item[data-page="${id}"]`)?.classList.add('active');
+  if (id === 'page-home')        renderHome();
+  if (id === 'page-avisos')      renderAvisos();
   if (id === 'page-confirmacao') renderConfirmacao();
-  if (id === 'page-cadastro') renderCadastro();
-}
-
-// ---- Modal ----
-function openModal(id: string) {
-  const m = document.getElementById(id);
-  if (m) m.classList.add('open');
-}
-function closeModal(id: string) {
-  const m = document.getElementById(id);
-  if (m) m.classList.remove('open');
+  if (id === 'page-cadastro')    renderCadastro();
 }
 
 // ==============================================
-// RENDER FUNCTIONS
+// RENDER HOME
 // ==============================================
-
-function renderHome() {
-  const u = store.getUsuario();
+async function renderHome() {
+  const u = api.getUsuario();
   if (!u) return;
 
-  // Update hero
   const heroName = document.getElementById('hero-name');
   const heroRole = document.getElementById('hero-role');
   if (heroName) heroName.textContent = u.nome.split(' ')[0];
   if (heroRole) heroRole.textContent = `${perfilEmoji(u.perfil)} ${perfilLabel(u.perfil)}`;
 
-  // Render based on profile
   const homeContent = document.getElementById('home-dynamic');
   if (!homeContent) return;
+  setLoading(homeContent);
 
-  if (u.perfil === 'professor') {
-    renderHomeProfessor(homeContent);
-  } else {
-    renderHomeAluno(homeContent, u);
+  try {
+    const aula = await api.getAulaAtiva();
+
+    if (u.perfil === 'gestor') {
+      await renderHomeGestor(homeContent, aula);
+    } else {
+      await renderHomeAluno(homeContent, u, aula);
+    }
+  } catch (e: any) {
+    homeContent.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><div class="empty-text">Erro ao carregar</div><div class="empty-sub">${e.message}</div></div>`;
   }
 }
 
-function renderHomeProfessor(container: HTMLElement) {
-  const aula = store.getAulaAtiva();
-  const pessoas = store.getPessoas();
-  const alunos = store.getPessoas('aluno');
-  const est    = store.getPessoas('estagiario');
-  const vol    = store.getPessoas('voluntario');
+async function renderHomeGestor(container: HTMLElement, aula: any) {
+  const [alunos, est, vol] = await Promise.all([
+    api.getPessoas('aluno'),
+    api.getPessoas('estagiario'),
+    api.getPessoas('voluntario'),
+  ]);
 
-  let confirmStats = { confirmados: 0, total: 0 };
+  let confs: any[] = [];
+  let confirmados = 0;
   if (aula) {
-    const confs = store.getConfirmacoes(aula.id);
-    confirmStats.total = alunos.length + est.length + vol.length;
-    confirmStats.confirmados = confs.filter(c => c.status === 'confirmado').length;
+    confs = await api.getConfirmacoes(aula.id);
+    confirmados = confs.filter((c: any) => c.status === 'confirmado').length;
   }
 
-  // Update stat numbers
   const statConf = document.getElementById('stat-confirmados');
   const statTeam = document.getElementById('stat-equipe');
   const statAlun = document.getElementById('stat-alunos');
-  if (statConf) statConf.textContent = String(confirmStats.confirmados);
+  if (statConf) statConf.textContent = String(confirmados);
   if (statTeam) statTeam.textContent = String(est.length + vol.length);
   if (statAlun) statAlun.textContent = String(alunos.length);
 
-  // Aula card com botão de nova aula
   let html = '';
   if (aula) {
     html += `
@@ -121,35 +130,32 @@ function renderHomeProfessor(container: HTMLElement) {
     <div class="aula-card">
       <div class="aula-title">${aula.titulo}</div>
       <div class="aula-info">📍 ${aula.local}</div>
-      <div class="aula-date">🗓 ${fmt(aula.data)} às ${aula.horario}</div>
-      ${aula.descricao ? `<div class="aula-desc" style="margin-top:10px; font-size:13px; opacity:0.9;">📝 ${aula.descricao}</div>` : ''}
+      <div class="aula-date">🗓 ${fmtDate(aula.data)} às ${String(aula.horario).slice(0,5)}</div>
+      ${aula.descricao ? `<div style="margin-top:8px;font-size:13px;opacity:.9;">📝 ${aula.descricao}</div>` : ''}
+      <button class="btn btn-danger btn-sm" style="margin-top:12px;" onclick="deleteAula('${aula.id}')">🗑 Cancelar Aula</button>
     </div>`;
   } else {
     html += `<div class="card" style="margin:12px 16px;text-align:center;color:var(--text-light);">
-      <div style="font-size:48px; margin-bottom:10px;">📅</div>
-      <div style="font-weight:bold; margin-bottom:5px;">Nenhuma aula agendada</div>
-      <div style="font-size:13px; margin-bottom:15px;">Clique no botão + para agendar uma nova aula.</div>
+      <div style="font-size:48px;margin-bottom:10px;">📅</div>
+      <div style="font-weight:bold;margin-bottom:5px;">Nenhuma aula agendada</div>
+      <div style="font-size:13px;margin-bottom:15px;">Clique no botão + para agendar.</div>
       <button class="btn btn-primary" onclick="openModal('modal-nova-aula')">+ Nova Aula</button>
     </div>`;
   }
 
-  // Team overview
   if (aula) {
-    const confs = store.getConfirmacoes(aula.id);
     html += `<div class="card-title" style="padding:0 16px 4px;">👥 Confirmações da Equipe</div>`;
-
-    const grupos: Array<{label:string; lista: typeof alunos; perfil: PerfilTipo}> = [
-      { label:'Alunos', lista:alunos, perfil:'aluno' },
-      { label:'Estagiários', lista:est, perfil:'estagiario' },
-      { label:'Voluntários', lista:vol, perfil:'voluntario' },
+    const grupos = [
+      { label: 'Alunos', lista: alunos, perfil: 'aluno' },
+      { label: 'Estagiários', lista: est, perfil: 'estagiario' },
+      { label: 'Voluntários', lista: vol, perfil: 'voluntario' },
     ];
     for (const g of grupos) {
       if (!g.lista.length) continue;
-      html += `<div class="card" style="margin:6px 16px;">
-        <div class="card-title">${g.label}</div>`;
+      html += `<div class="card" style="margin:6px 16px;"><div class="card-title">${g.label}</div>`;
       for (const p of g.lista) {
-        const c = confs.find(x => x.pessoaId === p.id);
-        const statusBadge = c?.status === 'confirmado'
+        const c = confs.find((x: any) => x.pessoa_id === p.id);
+        const badge = c?.status === 'confirmado'
           ? '<span class="badge badge-confirm">✅ Confirmado</span>'
           : c?.status === 'nao_vai'
           ? '<span class="badge" style="background:#fce4ec;color:#c62828;">❌ Não vai</span>'
@@ -158,10 +164,8 @@ function renderHomeProfessor(container: HTMLElement) {
           <div class="avatar avatar-${g.perfil}">${initials(p.nome)}</div>
           <div class="person-info">
             <div class="person-name">${p.nome}</div>
-            <div class="person-sub">${p.telefone}</div>
-          </div>
-          ${statusBadge}
-        </div>`;
+            <div class="person-sub">${p.telefone || ''}</div>
+          </div>${badge}</div>`;
       }
       html += `</div>`;
     }
@@ -170,17 +174,20 @@ function renderHomeProfessor(container: HTMLElement) {
   container.innerHTML = html;
 }
 
-function renderHomeAluno(container: HTMLElement, u: Pessoa) {
-  const aula = store.getAulaAtiva();
-  const conf = aula ? store.getConfirmacaoPessoa(aula.id, u.id) : null;
+async function renderHomeAluno(container: HTMLElement, u: any, aula: any) {
+  let conf: any = null;
+  if (aula) {
+    const confs = await api.getConfirmacoes(aula.id);
+    conf = confs.find((c: any) => c.pessoa_id === u.id) || null;
+  }
 
   let html = '';
   if (aula) {
     html += `<div class="aula-card">
       <div class="aula-title">${aula.titulo}</div>
       <div class="aula-info">📍 ${aula.local}</div>
-      <div class="aula-date">🗓 ${fmt(aula.data)} às ${aula.horario}</div>
-      ${aula.descricao ? `<div class="aula-desc" style="margin-top:10px; font-size:13px; opacity:0.9;">📝 ${aula.descricao}</div>` : ''}
+      <div class="aula-date">🗓 ${fmtDate(aula.data)} às ${String(aula.horario).slice(0,5)}</div>
+      ${aula.descricao ? `<div style="margin-top:8px;font-size:13px;opacity:.9;">📝 ${aula.descricao}</div>` : ''}
     </div>`;
 
     const status = conf?.status;
@@ -189,14 +196,10 @@ function renderHomeAluno(container: HTMLElement, u: Pessoa) {
       <div style="font-weight:800;font-size:18px;margin-bottom:6px;">Você vai para a aula?</div>
       <div style="color:var(--text-light);font-size:14px;margin-bottom:20px;">${aula.titulo}</div>
       <div style="display:flex;gap:12px;justify-content:center;">
-        <button class="btn btn-success" onclick="confirmarPresenca('${aula.id}','${u.id}','confirmado')" 
-          ${status==='confirmado'?'style="box-shadow:0 0 0 3px #00C853;"':''}>
-          ✅ Vou!
-        </button>
+        <button class="btn btn-success" onclick="confirmarPresenca('${aula.id}','${u.id}','confirmado')"
+          ${status === 'confirmado' ? 'style="box-shadow:0 0 0 3px #00C853;"' : ''}>✅ Vou!</button>
         <button class="btn btn-danger" onclick="confirmarPresenca('${aula.id}','${u.id}','nao_vai')"
-          ${status==='nao_vai'?'style="box-shadow:0 0 0 3px #FF5252;"':''}>
-          ❌ Não vou
-        </button>
+          ${status === 'nao_vai' ? 'style="box-shadow:0 0 0 3px #FF5252;"' : ''}>❌ Não vou</button>
       </div>
       ${status ? `<div style="margin-top:16px;font-size:13px;color:var(--text-light);">
         Sua resposta: <strong>${status === 'confirmado' ? '✅ Confirmado' : '❌ Não vai'}</strong>
@@ -210,520 +213,350 @@ function renderHomeAluno(container: HTMLElement, u: Pessoa) {
       <div class="empty-sub">O gestor ainda não agendou uma aula.</div>
     </div>`;
   }
-
   container.innerHTML = html;
 }
 
-function renderAvisos() {
-  const u = store.getUsuario();
+// ==============================================
+// RENDER AVISOS
+// ==============================================
+async function renderAvisos() {
+  const u = api.getUsuario();
   if (!u) return;
   const container = document.getElementById('avisos-list');
-  const fabAviso = document.getElementById('fab-aviso');
-  if (fabAviso) fabAviso.style.display = u.perfil === 'professor' ? 'flex' : 'none';
-
-  const avisos = store.getAvisos(u.perfil);
+  const fabAviso  = document.getElementById('fab-aviso');
+  if (fabAviso) fabAviso.style.display = u.perfil === 'gestor' ? 'flex' : 'none';
   if (!container) return;
+  setLoading(container);
 
-  if (!avisos.length) {
-    container.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">Nenhum aviso</div><div class="empty-sub">Ainda não há avisos publicados.</div></div>`;
-    return;
+  try {
+    const avisos = await api.getAvisos(u.perfil);
+    if (!avisos.length) {
+      container.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">Nenhum aviso</div></div>`;
+      return;
+    }
+    container.innerHTML = avisos.map((a: any) => `
+      <div class="aviso-card ${a.urgente ? 'urgent' : ''}">
+        <div class="aviso-header">
+          <div>
+            ${a.urgente ? '<span class="badge" style="background:#fce4ec;color:#c62828;margin-bottom:6px;">⚠️ Urgente</span><br>' : ''}
+            <div class="aviso-title">${a.titulo}</div>
+          </div>
+          <div style="text-align:right;">
+            <div class="aviso-date">${fmtDate(a.criado_em)}</div>
+            <div class="aviso-date">${fmtTime(a.criado_em)}</div>
+            ${u.perfil === 'gestor' ? `<button class="btn btn-danger btn-sm" style="margin-top:6px;" onclick="doDeleteAviso('${a.id}')">🗑 Excluir</button>` : ''}
+          </div>
+        </div>
+        <div class="aviso-body">${a.mensagem}</div>
+      </div>`).join('');
+  } catch (e: any) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><div class="empty-text">${e.message}</div></div>`;
   }
-
-  container.innerHTML = avisos.map(a => `
-    <div class="aviso-card ${a.urgente ? 'urgent' : ''}">
-      <div class="aviso-header">
-        <div>
-          ${a.urgente ? '<span class="badge" style="background:#fce4ec;color:#c62828;margin-bottom:6px;">⚠️ Urgente</span><br>' : ''}
-          <div class="aviso-title">${a.titulo}</div>
-        </div>
-        <div style="text-align:right;">
-          <div class="aviso-date">${fmt(a.criadoEm)}</div>
-          <div class="aviso-date">${fmtTime(a.criadoEm)}</div>
-          ${u.perfil === 'professor' ? `<button class="btn btn-danger btn-sm" style="margin-top:8px;" onclick="deleteAviso('${a.id}')">🗑 Excluir</button>` : ''}
-        </div>
-      </div>
-      <div class="aviso-body">${a.mensagem}</div>
-      <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;">
-        ${a.destinatarios.map(d=>`<span class="badge badge-${d}">${perfilEmoji(d as PerfilTipo)} ${perfilLabel(d as PerfilTipo)}</span>`).join('')}
-      </div>
-    </div>
-  `).join('');
 }
 
-function renderConfirmacao() {
-  const u = store.getUsuario();
+// ==============================================
+// RENDER CONFIRMAÇÃO
+// ==============================================
+async function renderConfirmacao() {
+  const u = api.getUsuario();
   if (!u) return;
   const container = document.getElementById('confirmacao-content');
   if (!container) return;
+  setLoading(container);
 
-  const aula = store.getAulaAtiva();
-  if (!aula) {
-    container.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Nenhuma aula ativa</div><div class="empty-sub">Aguarde o gestor agendar uma aula.</div></div>`;
-    return;
-  }
-
-  const confs = store.getConfirmacoes(aula.id);
-  const todos = store.getPessoas();
-  const equipe = todos.filter(p => p.perfil !== 'professor');
-
-  let html = `<div class="aula-card">
-    <div class="aula-title">${aula.titulo}</div>
-    <div class="aula-info">📍 ${aula.local}</div>
-    <div class="aula-date">🗓 ${fmt(aula.data)} às ${aula.horario}</div>
-  </div>`;
-
-  const grupos: Array<{label:string; perfil: PerfilTipo}> = [
-    { label:'👩‍🎓 Alunos', perfil:'aluno' },
-    { label:'📋 Estagiários', perfil:'estagiario' },
-    { label:'🤝 Voluntários', perfil:'voluntario' },
-  ];
-
-  for (const g of grupos) {
-    const lista = equipe.filter(p => p.perfil === g.perfil);
-    if (!lista.length) continue;
-    html += `<div class="card" style="margin:8px 16px;"><div class="card-title">${g.label} — ${lista.length}</div>`;
-    for (const p of lista) {
-      const c = confs.find(x => x.pessoaId === p.id);
-      const myConf = u.id === p.id;
-      html += `<div class="person-row">
-        <div class="avatar avatar-${p.perfil}">${initials(p.nome)}</div>
-        <div class="person-info">
-          <div class="person-name">${p.nome}</div>
-          <div class="person-sub">${p.telefone}</div>
-        </div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
-          ${c ? `
-            <span class="badge ${c.status==='confirmado'?'badge-confirm':''}" 
-              style="${c.status==='nao_vai'?'background:#fce4ec;color:#c62828;':''}">
-              ${c.status==='confirmado'?'✅ Confirmado':'❌ Não vai'}
-            </span>
-            ${(myConf || u.perfil==='professor') ? `<button class="btn btn-danger btn-sm" onclick="deleteConf('${aula.id}','${p.id}')">🗑 Excluir</button>` : ''}
-          ` : `
-            <span class="badge badge-pendente">⏳ Pendente</span>
-            ${myConf ? `
-              <button class="btn btn-success btn-sm" onclick="confirmarPresenca('${aula.id}','${p.id}','confirmado')">✅ Confirmar</button>
-            ` : ''}
-          `}
-        </div>
-      </div>`;
+  try {
+    const aula = await api.getAulaAtiva();
+    if (!aula) {
+      container.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Nenhuma aula ativa</div></div>`;
+      return;
     }
-    html += `</div>`;
-  }
 
-  container.innerHTML = html;
+    const [confs, pessoas] = await Promise.all([
+      api.getConfirmacoes(aula.id),
+      api.getPessoas(),
+    ]);
+
+    let html = `<div class="aula-card">${aula.titulo}<br>
+      <small style="opacity:.8">📍 ${aula.local} | 🗓 ${fmtDate(aula.data)} ${String(aula.horario).slice(0,5)}</small>
+    </div>`;
+
+    const grupos = [
+      { label: '🏄 Alunos', perfil: 'aluno' },
+      { label: '📋 Estagiários', perfil: 'estagiario' },
+      { label: '🤝 Voluntários', perfil: 'voluntario' },
+    ];
+
+    for (const g of grupos) {
+      const lista = pessoas.filter((p: any) => p.perfil === g.perfil);
+      if (!lista.length) continue;
+      html += `<div class="card" style="margin:8px 16px;"><div class="card-title">${g.label} — ${lista.length}</div>`;
+      for (const p of lista) {
+        const c = confs.find((x: any) => x.pessoa_id === p.id);
+        const myConf = u.id === p.id;
+        html += `<div class="person-row">
+          <div class="avatar avatar-${p.perfil}">${initials(p.nome)}</div>
+          <div class="person-info">
+            <div class="person-name">${p.nome}</div>
+            <div class="person-sub">${p.telefone || ''}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+            ${c ? `
+              <span class="badge ${c.status === 'confirmado' ? 'badge-confirm' : ''}"
+                style="${c.status === 'nao_vai' ? 'background:#fce4ec;color:#c62828;' : ''}">
+                ${c.status === 'confirmado' ? '✅ Confirmado' : '❌ Não vai'}
+              </span>
+              ${(myConf || u.perfil === 'gestor') ? `<button class="btn btn-danger btn-sm" onclick="deleteConf('${aula.id}','${p.id}')">🗑 Excluir</button>` : ''}
+            ` : `
+              <span class="badge badge-pendente">⏳ Pendente</span>
+              ${myConf ? `<button class="btn btn-success btn-sm" onclick="confirmarPresenca('${aula.id}','${p.id}','confirmado')">✅ Confirmar</button>` : ''}
+            `}
+          </div>
+        </div>`;
+      }
+      html += `</div>`;
+    }
+    container.innerHTML = html;
+  } catch (e: any) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><div class="empty-text">${e.message}</div></div>`;
+  }
 }
 
-function renderCadastro() {
-  const u = store.getUsuario();
+// ==============================================
+// RENDER CADASTRO
+// ==============================================
+async function renderCadastro() {
+  const u = api.getUsuario();
   if (!u) return;
-
-  // Só renderiza se for gestor
-  if (u.perfil !== 'professor') {
-    return;
-  }
-
   const container = document.getElementById('cadastro-list');
   const sectionTitle = document.getElementById('cadastro-section-title');
   if (!container) return;
+  setLoading(container);
 
   const filterSelect = document.getElementById('cadastro-filter') as HTMLSelectElement;
-  const activePerfil: PerfilTipo = (filterSelect?.value as PerfilTipo) || 'aluno';
+  const activePerfil = filterSelect?.value || 'aluno';
+  if (sectionTitle) sectionTitle.textContent = `Lista de ${perfilLabel(activePerfil)}s`;
 
-  if (sectionTitle) {
-    sectionTitle.textContent = `Lista de ${perfilLabel(activePerfil)}s`;
+  try {
+    const lista = await api.getPessoas(activePerfil);
+    if (!lista.length) {
+      container.innerHTML = `<div class="empty-state"><div class="empty-icon">${perfilEmoji(activePerfil)}</div><div class="empty-text">Nenhum ${perfilLabel(activePerfil)}</div><div class="empty-sub">Clique em + para cadastrar.</div></div>`;
+      return;
+    }
+    container.innerHTML = lista.map((p: any) => `
+      <div class="person-row">
+        <div class="avatar avatar-${p.perfil}">${initials(p.nome)}</div>
+        <div class="person-info">
+          <div class="person-name">${p.nome}</div>
+          <div class="person-sub">📧 ${p.email || '-'}</div>
+          <div class="person-sub">📞 ${p.telefone || '-'}</div>
+        </div>
+        <div class="person-actions">
+          <button class="btn btn-danger btn-sm" onclick="doDeletePessoa('${p.id}')">🗑</button>
+        </div>
+      </div>`).join('');
+  } catch (e: any) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><div class="empty-text">${e.message}</div></div>`;
   }
-
-  const lista = store.getPessoas(activePerfil);
-  if (!lista.length) {
-    container.innerHTML = `<div class="empty-state"><div class="empty-icon">${perfilEmoji(activePerfil)}</div><div class="empty-text">Nenhum ${perfilLabel(activePerfil)}</div><div class="empty-sub">Clique em + para cadastrar.</div></div>`;
-    return;
-  }
-
-  container.innerHTML = lista.map(p => `
-    <div class="person-row">
-      <div class="avatar avatar-${p.perfil}">${initials(p.nome)}</div>
-      <div class="person-info">
-        <div class="person-name">${p.nome}</div>
-        <div class="person-sub">📧 ${p.email}</div>
-        <div class="person-sub">📞 ${p.telefone}</div>
-      </div>
-      <div class="person-actions">
-        <button class="btn btn-danger btn-sm" onclick="deletePessoa('${p.id}')">🗑</button>
-      </div>
-    </div>
-  `).join('');
 }
 
 // ==============================================
-// GLOBAL ACTIONS (called from HTML onclick)
+// GLOBAL ACTIONS
 // ==============================================
-
-(window as any).openModal = openModal;
-(window as any).closeModal = closeModal;
-
-(window as any).confirmarPresenca = function(aulaId: string, pessoaId: string, status: 'confirmado'|'nao_vai') {
-  store.confirmar(aulaId, pessoaId, status);
-  toast(status === 'confirmado' ? '✅ Presença confirmada!' : '❌ Ausência registrada.');
-  renderHome();
-  renderConfirmacao();
-};
-
-(window as any).deleteConf = function(aulaId: string, pessoaId: string) {
-  if (!confirm('Excluir esta confirmação?')) return;
-  store.deleteConfirmacao(aulaId, pessoaId);
-  toast('🗑 Confirmação excluída.');
-  renderConfirmacao();
-  renderHome();
-};
-
-(window as any).deleteMinhaConf = function(aulaId: string, pessoaId: string) {
-  store.deleteConfirmacao(aulaId, pessoaId);
-  toast('🗑 Confirmação excluída.');
-  renderHome();
-};
-
-(window as any).deleteAviso = function(id: string) {
-  if (!confirm('Excluir este aviso?')) return;
-  store.deleteAviso(id);
-  toast('🗑 Aviso excluído.');
-  renderAvisos();
-};
-
-(window as any).deletePessoa = function(id: string) {
-  if (!confirm('Remover esta pessoa?')) return;
-  store.deletePessoa(id);
-  toast('🗑 Pessoa removida.');
-  renderCadastro();
-  renderHome();
-};
-
-(window as any).handleCadastroFilter = function(val: string) {
-  renderCadastro();
-};
-
-// ==============================================
-// FORM SUBMISSIONS
-// ==============================================
-
-function setupForms() {
-  // Login form
-  const loginBtn = document.getElementById('btn-login');
-  loginBtn?.addEventListener('click', () => {
-    const nome = (document.getElementById('login-nome') as HTMLInputElement)?.value?.trim();
-    const perfilSelect = document.getElementById('login-perfil') as HTMLSelectElement;
-    const perfilSelecionado = perfilSelect?.value;
-    const senha = (document.getElementById('login-senha') as HTMLInputElement)?.value?.trim();
-    
-    console.log('=== TENTATIVA DE LOGIN ===');
-    console.log('Nome digitado:', nome);
-    console.log('Perfil selecionado (HTML):', perfilSelecionado);
-    console.log('Senha digitada:', senha);
-    
-    if (!nome) { 
-      toast('⚠️ Digite seu nome'); 
-      return; 
-    }
-    
-    // Mapeia o perfil do HTML para o tipo do sistema
-    let perfilSistema: PerfilTipo;
-    if (perfilSelecionado === 'gestor') {
-      perfilSistema = 'professor'; // Mapeia gestor para professor
-    } else {
-      perfilSistema = perfilSelecionado as PerfilTipo; // aluno, estagiario, voluntario
-    }
-    
-    console.log('Perfil mapeado para sistema:', perfilSistema);
-    
-    let user: Pessoa | null = null;
-    
-    if (perfilSistema === 'professor') {
-      // Gestor precisa de senha
-      if (!senha) {
-        toast('⚠️ Digite a senha');
-        return;
-      }
-      user = store.loginComSenha(nome, perfilSistema, senha);
-      console.log('Resultado login gestor:', user);
-    } else {
-      // Outros perfis não precisam de senha
-      user = store.loginByNome(nome, perfilSistema);
-      console.log('Resultado login outros:', user);
-    }
-    
-    if (!user) {
-      console.log('❌ LOGIN FALHOU - Usuário não encontrado ou senha incorreta');
-      
-      // Vamos listar todos os usuários disponíveis para debug
-      const todosUsuarios = store.getPessoas();
-      console.log('Usuários disponíveis no sistema:', todosUsuarios.map(u => ({
-        nome: u.nome,
-        perfil: u.perfil,
-        id: u.id
-      })));
-      
-      toast('❌ Usuário não encontrado ou senha incorreta.');
-      return;
-    }
-
-    console.log('✅ LOGIN BEM SUCEDIDO! Usuário:', user);
-    
-    // Verifica se é primeiro acesso do gestor (senha padrão)
-    if (user.perfil === 'professor' && store.isPrimeiroAcesso(user.id)) {
-      toast('🔐 Primeiro acesso. Por favor, altere sua senha.');
-      setTimeout(() => {
-        openModal('modal-senha');
-      }, 500);
-    }
-    
-    initApp();
-  });
-
-  // Perfil quick-select buttons
-  document.querySelectorAll('.profile-option').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.profile-option').forEach(b => b.classList.remove('selected'));
-      btn.classList.add('selected');
-      const sel = document.getElementById('login-perfil') as HTMLSelectElement;
-      if (sel) sel.value = (btn as HTMLElement).dataset.perfil || '';
-    });
-  });
-
-  // Botão de alterar senha
-  const btnSalvarSenha = document.getElementById('btn-salvar-senha');
-  btnSalvarSenha?.addEventListener('click', () => {
-    const u = store.getUsuario();
-    if (!u || u.perfil !== 'professor') {
-      toast('⚠️ Apenas gestores podem alterar senha.');
-      closeModal('modal-senha');
-      return;
-    }
-
-    const novaSenha = (document.getElementById('nova-senha') as HTMLInputElement)?.value;
-    const confirmaSenha = (document.getElementById('confirma-senha') as HTMLInputElement)?.value;
-
-    if (!novaSenha || novaSenha.length < 6) {
-      toast('⚠️ A senha deve ter no mínimo 6 caracteres.');
-      return;
-    }
-
-    if (novaSenha !== confirmaSenha) {
-      toast('⚠️ As senhas não conferem.');
-      return;
-    }
-
-    // Tenta alterar a senha
-    const sucesso = store.alterarSenhaPrimeiroAcesso(u.id, novaSenha);
-    
-    if (sucesso) {
-      toast('✅ Senha alterada com sucesso!');
-      closeModal('modal-senha');
-      
-      // Limpa os campos
-      (document.getElementById('nova-senha') as HTMLInputElement).value = '';
-      (document.getElementById('confirma-senha') as HTMLInputElement).value = '';
-    } else {
-      toast('❌ Erro ao alterar senha.');
-    }
-  });
-
-  // Botão de salvar aula
-  const aulaBtn = document.getElementById('btn-salvar-aula');
-  aulaBtn?.addEventListener('click', () => {
-    const u = store.getUsuario();
-    if (!u || u.perfil !== 'professor') {
-      toast('⚠️ Apenas gestores podem agendar aulas.');
-      closeModal('modal-nova-aula');
-      return;
-    }
-
-    const titulo = (document.getElementById('aula-titulo') as HTMLInputElement)?.value?.trim();
-    const data = (document.getElementById('aula-data') as HTMLInputElement)?.value;
-    const horario = (document.getElementById('aula-horario') as HTMLInputElement)?.value;
-    const local = (document.getElementById('aula-local') as HTMLInputElement)?.value?.trim();
-    const descricao = (document.getElementById('aula-desc') as HTMLTextAreaElement)?.value?.trim();
-
-    if (!titulo || !data || !horario || !local) {
-      toast('⚠️ Preencha todos os campos obrigatórios.');
-      return;
-    }
-
-    // Formata a data para o padrão brasileiro
-    const dataObj = new Date(data + 'T' + horario);
-    const dataFormatada = dataObj.toISOString();
-
-    store.addAula({
-      titulo,
-      data: dataFormatada,
-      horario,
-      local,
-      descricao: descricao || '',
-      professorId: u.id,
-      status: 'agendada'
-    });
-
-    toast('✅ Aula agendada com sucesso!');
-    closeModal('modal-nova-aula');
-
-    // Limpa o formulário
-    (document.getElementById('aula-titulo') as HTMLInputElement).value = '';
-    (document.getElementById('aula-data') as HTMLInputElement).value = '';
-    (document.getElementById('aula-horario') as HTMLInputElement).value = '';
-    (document.getElementById('aula-local') as HTMLInputElement).value = '';
-    (document.getElementById('aula-desc') as HTMLTextAreaElement).value = '';
-
+(window as any).confirmarPresenca = async function(aulaId: string, pessoaId: string, status: string) {
+  try {
+    await api.confirmar(aulaId, pessoaId, status);
+    toast(status === 'confirmado' ? '✅ Presença confirmada!' : '❌ Ausência registrada.');
     renderHome();
     renderConfirmacao();
-  });
+  } catch (e: any) { toast('❌ ' + e.message, false); }
+};
 
-  // Aviso form
-  const avisoBtn = document.getElementById('btn-salvar-aviso');
-  avisoBtn?.addEventListener('click', () => {
-    const u = store.getUsuario();
-    if (!u) return;
-    const titulo = (document.getElementById('aviso-titulo') as HTMLInputElement)?.value?.trim();
-    const mensagem = (document.getElementById('aviso-msg') as HTMLTextAreaElement)?.value?.trim();
-    const urgente = (document.getElementById('aviso-urgente') as HTMLInputElement)?.checked;
-    const destinatarios: PerfilTipo[] = [];
-    
-    // Por enquanto, envia para todos
-    destinatarios.push('aluno', 'estagiario', 'voluntario');
-    
-    if (!titulo || !mensagem) { toast('⚠️ Preencha título e mensagem.'); return; }
-    
-    store.addAviso({ titulo, mensagem, urgente: urgente || false, destinatarios, autorId: u.id });
-    toast('📢 Aviso enviado!');
-    closeModal('modal-aviso');
-    (document.getElementById('aviso-titulo') as HTMLInputElement).value = '';
-    (document.getElementById('aviso-msg') as HTMLTextAreaElement).value = '';
+(window as any).deleteConf = async function(aulaId: string, pessoaId: string) {
+  if (!confirm('Excluir esta confirmação?')) return;
+  try {
+    await api.deleteConfirmacao(aulaId, pessoaId);
+    toast('🗑 Confirmação excluída.');
+    renderConfirmacao(); renderHome();
+  } catch (e: any) { toast('❌ ' + e.message, false); }
+};
+
+(window as any).deleteMinhaConf = async function(aulaId: string, pessoaId: string) {
+  try {
+    await api.deleteConfirmacao(aulaId, pessoaId);
+    toast('🗑 Confirmação excluída.');
+    renderHome();
+  } catch (e: any) { toast('❌ ' + e.message, false); }
+};
+
+(window as any).doDeleteAviso = async function(id: string) {
+  if (!confirm('Excluir este aviso?')) return;
+  try {
+    await api.deleteAviso(id);
+    toast('🗑 Aviso excluído.');
     renderAvisos();
+  } catch (e: any) { toast('❌ ' + e.message, false); }
+};
+
+(window as any).doDeletePessoa = async function(id: string) {
+  if (!confirm('Remover esta pessoa?')) return;
+  try {
+    await api.deletePessoa(id);
+    toast('🗑 Pessoa removida.');
+    renderCadastro(); renderHome();
+  } catch (e: any) { toast('❌ ' + e.message, false); }
+};
+
+(window as any).deleteAula = async function(id: string) {
+  if (!confirm('Cancelar esta aula?')) return;
+  try {
+    await api.deleteAula(id);
+    toast('🗑 Aula cancelada.');
+    renderHome();
+  } catch (e: any) { toast('❌ ' + e.message, false); }
+};
+
+(window as any).handleCadastroFilter = function() { renderCadastro(); };
+
+// ==============================================
+// FORMS
+// ==============================================
+function setupForms() {
+  // Login
+  document.getElementById('btn-login')?.addEventListener('click', async () => {
+    const nome   = (document.getElementById('login-nome') as HTMLInputElement)?.value?.trim();
+    const perfil = (document.getElementById('login-perfil') as HTMLSelectElement)?.value;
+    const senha  = (document.getElementById('login-senha') as HTMLInputElement)?.value;
+    if (!nome) { toast('⚠️ Digite seu nome', false); return; }
+    try {
+      await api.login(nome, perfil, senha);
+      initApp();
+    } catch (e: any) { toast('❌ ' + e.message, false); }
   });
 
-  // Cadastro form
-  const cadastroBtn = document.getElementById('btn-salvar-pessoa');
-  cadastroBtn?.addEventListener('click', () => {
-    const u = store.getUsuario();
-    if (!u || u.perfil !== 'professor') {
-      toast('⚠️ Apenas gestores podem cadastrar pessoas.');
-      closeModal('modal-cadastro');
-      return;
-    }
+  // Permitir Enter no campo nome/senha
+  ['login-nome', 'login-senha'].forEach(id => {
+    document.getElementById(id)?.addEventListener('keydown', (e: any) => {
+      if (e.key === 'Enter') document.getElementById('btn-login')?.click();
+    });
+  });
 
-    const nome    = (document.getElementById('cad-nome') as HTMLInputElement)?.value?.trim();
-    const perfilSelect = (document.getElementById('cad-perfil') as HTMLSelectElement)?.value;
-    
-    // Mapeia o perfil do HTML para o tipo do sistema
-    let perfilSistema: PerfilTipo;
-    if (perfilSelect === 'gestor') {
-      perfilSistema = 'professor';
-    } else {
-      perfilSistema = perfilSelect as PerfilTipo;
-    }
-    
-    if (!nome) { toast('⚠️ Preencha o nome.'); return; }
-    
-    // Gera email e telefone padrão se não existirem
-    const email = `${nome.toLowerCase().replace(/\s+/g, '.')}@email.com`;
-    const telefone = '(27) 99999-9999';
-    
-    store.addPessoa({ nome, email, telefone, perfil: perfilSistema, ativo: true });
-    toast(`✅ ${perfilLabel(perfilSistema)} cadastrado!`);
-    closeModal('modal-cadastro');
-    (document.getElementById('cad-nome') as HTMLInputElement).value = '';
-    renderCadastro();
+  // Perfil selector
+  document.querySelectorAll('.profile-option').forEach(opt => {
+    opt.addEventListener('click', () => {
+      document.querySelectorAll('.profile-option').forEach(o => o.classList.remove('selected'));
+      opt.classList.add('selected');
+      const perfil = (opt as HTMLElement).dataset.perfil || '';
+      const sel = document.getElementById('login-perfil') as HTMLSelectElement;
+      if (sel) sel.value = perfil;
+      const passGroup = document.getElementById('pass-group');
+      if (passGroup) passGroup.classList.toggle('hidden', perfil !== 'gestor');
+    });
+  });
+
+  // Trocar senha
+  document.getElementById('btn-salvar-senha')?.addEventListener('click', async () => {
+    const nova    = (document.getElementById('nova-senha') as HTMLInputElement)?.value;
+    const confirma = (document.getElementById('confirma-senha') as HTMLInputElement)?.value;
+    if (!nova || nova.length < 6) { toast('⚠️ Senha mínimo 6 caracteres', false); return; }
+    if (nova !== confirma) { toast('⚠️ Senhas não conferem', false); return; }
+    try {
+      await api.trocarSenha(nova);
+      toast('✅ Senha alterada com sucesso!');
+      closeModal('modal-senha');
+    } catch (e: any) { toast('❌ ' + e.message, false); }
+  });
+
+  // Nova aula
+  document.getElementById('btn-salvar-aula')?.addEventListener('click', async () => {
+    const titulo  = (document.getElementById('aula-titulo') as HTMLInputElement)?.value?.trim();
+    const data    = (document.getElementById('aula-data') as HTMLInputElement)?.value;
+    const horario = (document.getElementById('aula-horario') as HTMLInputElement)?.value;
+    const local   = (document.getElementById('aula-local') as HTMLInputElement)?.value?.trim();
+    const descricao = (document.getElementById('aula-desc') as HTMLTextAreaElement)?.value?.trim();
+    if (!titulo || !data || !horario || !local) { toast('⚠️ Preencha todos os campos.', false); return; }
+    try {
+      await api.addAula({ titulo, data, horario, local, descricao });
+      toast('✅ Aula agendada!');
+      closeModal('modal-nova-aula');
+      ['aula-titulo','aula-data','aula-horario','aula-local','aula-desc'].forEach(id => {
+        (document.getElementById(id) as HTMLInputElement).value = '';
+      });
+      renderHome();
+    } catch (e: any) { toast('❌ ' + e.message, false); }
+  });
+
+  // Novo aviso
+  document.getElementById('btn-salvar-aviso')?.addEventListener('click', async () => {
+    const titulo   = (document.getElementById('aviso-titulo') as HTMLInputElement)?.value?.trim();
+    const mensagem = (document.getElementById('aviso-msg') as HTMLTextAreaElement)?.value?.trim();
+    const urgente  = (document.getElementById('aviso-urgente') as HTMLInputElement)?.checked;
+    if (!titulo || !mensagem) { toast('⚠️ Preencha título e mensagem.', false); return; }
+    try {
+      await api.addAviso({ titulo, mensagem, urgente, destinatarios: ['aluno','estagiario','voluntario'] });
+      toast('📢 Aviso publicado!');
+      closeModal('modal-aviso');
+      (document.getElementById('aviso-titulo') as HTMLInputElement).value = '';
+      (document.getElementById('aviso-msg') as HTMLTextAreaElement).value = '';
+      renderAvisos();
+    } catch (e: any) { toast('❌ ' + e.message, false); }
+  });
+
+  // Novo cadastro
+  document.getElementById('btn-salvar-pessoa')?.addEventListener('click', async () => {
+    const nome   = (document.getElementById('cad-nome') as HTMLInputElement)?.value?.trim();
+    const perfil = (document.getElementById('cad-perfil') as HTMLSelectElement)?.value;
+    if (!nome) { toast('⚠️ Preencha o nome.', false); return; }
+    try {
+      await api.addPessoa({ nome, perfil });
+      toast(`✅ ${perfilLabel(perfil)} cadastrado!`);
+      closeModal('modal-cadastro');
+      (document.getElementById('cad-nome') as HTMLInputElement).value = '';
+      renderCadastro();
+    } catch (e: any) { toast('❌ ' + e.message, false); }
   });
 
   // Logout
-  const logoutBtn = document.getElementById('btn-logout');
-  logoutBtn?.addEventListener('click', () => {
-    store.logout();
+  document.getElementById('btn-logout')?.addEventListener('click', () => {
+    api.logout();
     showLoginScreen();
   });
 
-  // Close modals on backdrop click
+  // Fechar modal clicando fora
   document.querySelectorAll('.modal-overlay').forEach(m => {
-    m.addEventListener('click', (e) => {
-      if (e.target === m) m.classList.remove('open');
-    });
+    m.addEventListener('click', (e) => { if (e.target === m) (m as HTMLElement).classList.remove('open'); });
   });
 }
 
 // ==============================================
 // APP INIT
 // ==============================================
-
 function showLoginScreen() {
-  const login = document.getElementById('login-screen');
-  const main  = document.getElementById('main-app');
-  if (login) login.style.display = 'flex';
-  if (main)  main.style.display  = 'none';
+  document.getElementById('login-screen')!.style.display = 'flex';
+  document.getElementById('main-app')!.style.display = 'none';
 }
 
 function initApp() {
-  const u = store.getUsuario();
+  const u = api.getUsuario();
   if (!u) { showLoginScreen(); return; }
 
-  const login = document.getElementById('login-screen');
-  const main  = document.getElementById('main-app');
-  if (login) login.style.display = 'none';
-  if (main)  main.style.display  = 'flex';
+  document.getElementById('login-screen')!.style.display = 'none';
+  document.getElementById('main-app')!.style.display = 'flex';
 
-  // Adjust nav visibility per profile
-  const isProfessor = u.perfil === 'professor';
-  
-  // Mostra/esconde link de trocar senha (apenas para gestor)
-  const linkTrocarSenha = document.getElementById('link-trocar-senha');
-  if (linkTrocarSenha) {
-    if (isProfessor) {
-      linkTrocarSenha.classList.remove('hidden');
-    } else {
-      linkTrocarSenha.classList.add('hidden');
-    }
-  }
-
-  // Mostra/esconde a aba de cadastro (apenas para gestor)
-  const navCadastro = document.getElementById('nav-cadastro');
-  if (navCadastro) {
-    if (isProfessor) {
-      navCadastro.style.display = 'flex';
-    } else {
-      navCadastro.style.display = 'none';
-    }
-  }
-
-  // Mostra/esconde o FAB de cadastro (apenas para gestor)
-  const fabCadastro = document.getElementById('fab-cadastro');
-  if (fabCadastro) {
-    fabCadastro.style.display = isProfessor ? 'flex' : 'none';
-  }
-
-  // Mostra/esconde o filtro de cadastro (apenas para gestor)
-  const cadastroFilter = document.getElementById('cadastro-filter-wrap');
-  if (cadastroFilter) {
-    cadastroFilter.style.display = isProfessor ? 'block' : 'none';
-  }
-
-  // FAB de aviso (apenas para gestor)
-  const fabAviso = document.getElementById('fab-aviso');
-  if (fabAviso) {
-    fabAviso.style.display = isProfessor ? 'flex' : 'none';
-  }
-
-  // Set user display
+  const isGestor = u.perfil === 'gestor';
   const headerUser = document.getElementById('header-user-name');
   if (headerUser) headerUser.textContent = u.nome.split(' ')[0];
 
-  // Se não for gestor e estiver na página de cadastro, redireciona para home
-  if (!isProfessor) {
-    const activePage = document.querySelector('.page.active');
-    if (activePage?.id === 'page-cadastro') {
-      showPage('page-home');
-    }
-  }
+  document.getElementById('link-trocar-senha')?.classList.toggle('hidden', !isGestor);
+  const navCadastro = document.getElementById('nav-cadastro');
+  if (navCadastro) navCadastro.style.display = isGestor ? 'flex' : 'none';
+  const fabCadastro = document.getElementById('fab-cadastro');
+  if (fabCadastro) fabCadastro.style.display = isGestor ? 'flex' : 'none';
+  const cadastroFilter = document.getElementById('cadastro-filter-wrap');
+  if (cadastroFilter) (cadastroFilter as HTMLElement).style.display = isGestor ? 'block' : 'none';
 
   showPage('page-home');
 }
 
-// Nav click handlers
 function setupNav() {
   document.querySelectorAll('.nav-item').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -736,11 +569,7 @@ function setupNav() {
 document.addEventListener('DOMContentLoaded', () => {
   setupForms();
   setupNav();
-
-  const u = store.getUsuario();
-  if (u) {
-    initApp();
-  } else {
-    showLoginScreen();
-  }
+  const u = api.getUsuario();
+  if (u) initApp();
+  else showLoginScreen();
 });
