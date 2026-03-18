@@ -195,8 +195,13 @@
 <div class="modal-overlay" id="modal-cadastro">
   <div class="modal-sheet">
     <button class="modal-close" onclick="closeModal('modal-cadastro')">✕</button>
-    <div class="modal-title">👤 Novo Cadastro</div>
+    <div class="modal-title" id="modal-cadastro-title">👤 Novo Cadastro</div>
+    <input type="hidden" id="cad-edit-id" value="">
     <div class="form-group"><label class="form-label">Nome Completo</label><input class="form-input" id="cad-nome" type="text" placeholder="Nome completo" /></div>
+    <div class="form-group"><label class="form-label">Telefone</label><input class="form-input" id="cad-tel" type="tel" placeholder="(27) 99999-9999" /></div>
+    <div class="form-group"><label class="form-label">E-mail</label><input class="form-input" id="cad-email" type="email" placeholder="email@exemplo.com" /></div>
+    <div class="form-group"><label class="form-label">Telefone</label><input class="form-input" id="cad-tel" type="tel" placeholder="(27) 99999-9999" /></div>
+    
     <div class="form-group">
       <label class="form-label">Perfil</label>
       <select class="form-select" id="cad-perfil">
@@ -211,6 +216,7 @@
       <input class="form-input" id="cad-senha" type="password" placeholder="Mínimo 6 caracteres" />
     </div>
     <button class="btn btn-primary btn-full" id="btn-salvar-pessoa">✅ Cadastrar</button>
+    <button class="btn btn-outline btn-full" id="btn-cancelar-edicao" style="display:none;margin-top:8px;" onclick="cancelarEdicaoPessoa()">✕ Cancelar</button>
   </div>
 </div>
 

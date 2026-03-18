@@ -107,6 +107,26 @@ app.post('/api/pessoas', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'Erro ao cadastrar' }); }
 });
 
+app.put('/api/pessoas/:id', auth, async (req, res) => {
+  if (req.user.perfil !== 'gestor') return res.status(403).json({ error: 'Apenas gestores podem editar' });
+  const { nome, perfil, email, telefone, senha } = req.body;
+  try {
+    let extra = '';
+    const params = [nome, perfil, email, telefone, req.params.id];
+    if (senha && senha.length >= 6) {
+      const hash = await bcrypt.hash(senha, 10);
+      extra = ', senha_hash=$6, primeiro_acesso=FALSE';
+      params.splice(4, 0, hash);
+      params[params.length - 1] = req.params.id;
+    }
+    await pool.query(
+      `UPDATE pessoas SET nome=$1, perfil=$2, email=$3, telefone=$4${extra} WHERE id=$${params.length}`,
+      params
+    );
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: 'Erro ao atualizar' }); }
+});
+
 app.delete('/api/pessoas/:id', auth, async (req, res) => {
   if (req.user.perfil !== 'gestor') return res.status(403).json({ error: 'Apenas gestores podem remover' });
   try {

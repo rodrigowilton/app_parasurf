@@ -41,3 +41,5 @@ export async function getMinhaEquipe(aulaId: string, pessoaId: string) { return 
 export async function addEquipe(d: any) { return req('POST', '/equipes', d); }
 export async function updateEquipe(id: string, d: any) { return req('PUT', `/equipes/${id}`, d); }
 export async function deleteEquipe(id: string) { return req('DELETE', `/equipes/${id}`); }
+
+export async function updatePessoa(id: string, d: any) { return req('PUT', `/pessoas/${id}`, d); }

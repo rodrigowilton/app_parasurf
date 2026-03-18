@@ -354,6 +354,7 @@ async function renderCadastro() {
           <div class="person-sub">📞 ${p.telefone || '-'}</div>
         </div>
         <div class="person-actions">
+          <button class="btn btn-primary btn-sm" onclick="editarPessoa('${p.id}','${p.nome}','${p.perfil}','${p.telefone||''}','${p.email||''}')">✏️</button>
           <button class="btn btn-danger btn-sm" onclick="doDeletePessoa('${p.id}')">🗑</button>
         </div>
       </div>`).join('');
@@ -511,14 +512,35 @@ function setupForms() {
     if (wrap) wrap.style.display = cadPerfil.value === 'gestor' ? 'block' : 'none';
   });
   document.getElementById('btn-salvar-pessoa')?.addEventListener('click', async () => {
-    const nome   = (document.getElementById('cad-nome') as HTMLInputElement)?.value?.trim();
-    const perfil = (document.getElementById('cad-perfil') as HTMLSelectElement)?.value;
+    const nome    = (document.getElementById('cad-nome') as HTMLInputElement)?.value?.trim();
+    const perfil  = (document.getElementById('cad-perfil') as HTMLSelectElement)?.value;
+    const tel     = (document.getElementById('cad-tel') as HTMLInputElement)?.value?.trim();
+    const email   = (document.getElementById('cad-email') as HTMLInputElement)?.value?.trim();
+    const senha   = (document.getElementById('cad-senha') as HTMLInputElement)?.value?.trim();
+    const editId  = (document.getElementById('cad-edit-id') as HTMLInputElement)?.value?.trim();
+
     if (!nome) { toast('⚠️ Preencha o nome.', false); return; }
+    if (perfil === 'gestor' && !editId && !senha) { toast('⚠️ Informe a senha do gestor.', false); return; }
+
     try {
-      await api.addPessoa({ nome, perfil });
-      toast(`✅ ${perfilLabel(perfil)} cadastrado!`);
+      if (editId) {
+        await api.updatePessoa(editId, { nome, perfil, telefone: tel, email, senha: senha || undefined });
+        toast('✅ Cadastro atualizado!');
+      } else {
+        await api.addPessoa({ nome, perfil, telefone: tel, email, senha });
+        toast('✅ ' + perfilLabel(perfil) + ' cadastrado!');
+      }
       closeModal('modal-cadastro');
+      // Limpar campos
       (document.getElementById('cad-nome') as HTMLInputElement).value = '';
+      (document.getElementById('cad-tel') as HTMLInputElement).value = '';
+      (document.getElementById('cad-email') as HTMLInputElement).value = '';
+      (document.getElementById('cad-senha') as HTMLInputElement).value = '';
+      (document.getElementById('cad-edit-id') as HTMLInputElement).value = '';
+      const btnCancelar = document.getElementById('btn-cancelar-edicao');
+      if (btnCancelar) btnCancelar.style.display = 'none';
+      const titleModal = document.getElementById('modal-cadastro-title');
+      if (titleModal) titleModal.textContent = '👤 Novo Cadastro';
       renderCadastro();
     } catch (e: any) { toast('❌ ' + e.message, false); }
   });
@@ -895,3 +917,30 @@ function setupEquipeForm() {
     });
   }
 }
+
+(window as any).editarPessoa = function(id: string, nome: string, perfil: string, tel: string, email: string) {
+  (document.getElementById('cad-edit-id') as HTMLInputElement).value = id;
+  (document.getElementById('cad-nome') as HTMLInputElement).value = nome;
+  (document.getElementById('cad-tel') as HTMLInputElement).value = tel;
+  (document.getElementById('cad-email') as HTMLInputElement).value = email;
+  (document.getElementById('cad-perfil') as HTMLSelectElement).value = perfil;
+  const btnCancelar = document.getElementById('btn-cancelar-edicao');
+  if (btnCancelar) btnCancelar.style.display = 'block';
+  const title = document.getElementById('modal-cadastro-title');
+  if (title) title.textContent = '✏️ Editar Cadastro';
+  const senhaWrap = document.getElementById('cad-senha-wrap');
+  if (senhaWrap) senhaWrap.style.display = perfil === 'gestor' ? 'block' : 'none';
+  openModal('modal-cadastro');
+};
+
+(window as any).cancelarEdicaoPessoa = function() {
+  (document.getElementById('cad-edit-id') as HTMLInputElement).value = '';
+  (document.getElementById('cad-nome') as HTMLInputElement).value = '';
+  (document.getElementById('cad-tel') as HTMLInputElement).value = '';
+  (document.getElementById('cad-email') as HTMLInputElement).value = '';
+  const btnCancelar = document.getElementById('btn-cancelar-edicao');
+  if (btnCancelar) btnCancelar.style.display = 'none';
+  const title = document.getElementById('modal-cadastro-title');
+  if (title) title.textContent = '👤 Novo Cadastro';
+  closeModal('modal-cadastro');
+};
