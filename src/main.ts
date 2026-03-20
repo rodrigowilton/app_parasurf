@@ -83,6 +83,7 @@ async function renderHome() {
   const u = api.getUsuario();
   if (!u) return;
 
+  renderPrevisaoTempo();
   const heroName = document.getElementById('hero-name');
   const heroRole = document.getElementById('hero-role');
   if (heroName) heroName.textContent = u.nome.split(' ')[0];
@@ -1134,3 +1135,72 @@ function fmtDateStr(d: string): string {
   const blob = new Blob([html], { type: 'text/html' });
   window.open(URL.createObjectURL(blob), '_blank');
 };
+
+// ==============================================
+// PREVISÃO DO TEMPO
+// ==============================================
+function weatherCode(code: number): { icon: string; desc: string } {
+  if (code === 0)                    return { icon: '☀️',  desc: 'Céu limpo' };
+  if (code <= 2)                     return { icon: '🌤️', desc: 'Poucas nuvens' };
+  if (code === 3)                    return { icon: '☁️',  desc: 'Nublado' };
+  if (code <= 49)                    return { icon: '🌫️', desc: 'Névoa' };
+  if (code <= 59)                    return { icon: '🌦️', desc: 'Chuvisco' };
+  if (code <= 69)                    return { icon: '🌧️', desc: 'Chuva' };
+  if (code <= 79)                    return { icon: '🌨️', desc: 'Neve' };
+  if (code <= 84)                    return { icon: '🌦️', desc: 'Pancadas' };
+  if (code <= 99)                    return { icon: '⛈️',  desc: 'Trovoada' };
+  return { icon: '🌡️', desc: 'Variável' };
+}
+
+const DIAS = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+async function renderPrevisaoTempo() {
+  const container = document.getElementById('previsao-tempo');
+  if (!container) return;
+  container.innerHTML = `<div style="text-align:center;padding:10px;color:var(--text-light);font-size:13px;">🌤️ Carregando previsão...</div>`;
+
+  try {
+    const url = 'https://api.open-meteo.com/v1/forecast?latitude=-20.3297&longitude=-40.2922&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode&timezone=America/Sao_Paulo&forecast_days=7';
+    const resp = await fetch(url);
+    const data = await resp.json();
+    const d = data.daily;
+
+    let html = `<div style="padding:0 16px 4px;">
+      <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--text-light);margin-bottom:8px;">
+        📍 Vila Velha, ES — Previsão da Semana
+      </div>
+      <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;">`;
+
+    for (let i = 0; i < d.time.length; i++) {
+      const date    = new Date(d.time[i] + 'T12:00:00');
+      const diaNome = DIAS[date.getDay()];
+      const diaN    = date.getDate();
+      const w       = weatherCode(d.weathercode[i]);
+      const chuva   = d.precipitation_probability_max[i];
+      const tmax    = Math.round(d.temperature_2m_max[i]);
+      const tmin    = Math.round(d.temperature_2m_min[i]);
+      const isHoje  = i === 0;
+      const chuvaColor = chuva >= 70 ? '#1565C0' : chuva >= 40 ? '#0097A7' : '#90a4ae';
+
+      html += `<div style="
+        min-width:72px;flex-shrink:0;
+        background:${isHoje ? 'linear-gradient(135deg,var(--ocean-mid),var(--wave))' : 'white'};
+        border-radius:12px;padding:10px 6px;text-align:center;
+        box-shadow:0 2px 8px rgba(0,0,0,0.08);
+        border:${isHoje ? '2px solid var(--bright)' : '1px solid #e0e8f0'};
+      ">
+        <div style="font-size:11px;font-weight:${isHoje?'800':'600'};color:${isHoje?'rgba(255,255,255,0.9)':'var(--text-light)'};margin-bottom:2px;">${isHoje ? 'Hoje' : diaNome}</div>
+        <div style="font-size:10px;color:${isHoje?'rgba(255,255,255,0.7)':'#b0bec5'};margin-bottom:6px;">${diaN}</div>
+        <div style="font-size:24px;line-height:1;margin-bottom:6px;">${w.icon}</div>
+        <div style="font-size:13px;font-weight:800;color:${isHoje?'var(--sun)':'var(--coral)'};">${tmax}°</div>
+        <div style="font-size:11px;color:${isHoje?'rgba(255,255,255,0.7)':'var(--text-light)'};">${tmin}°</div>
+        <div style="font-size:10px;color:${isHoje?'rgba(255,255,255,0.8)':chuvaColor};margin-top:4px;">💧${chuva}%</div>
+      </div>`;
+    }
+
+    html += `</div></div>`;
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = `<div style="text-align:center;padding:8px;color:var(--text-light);font-size:12px;">Previsão indisponível</div>`;
+  }
+}
