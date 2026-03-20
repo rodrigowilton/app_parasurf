@@ -111,20 +111,20 @@ app.put('/api/pessoas/:id', auth, async (req, res) => {
   if (req.user.perfil !== 'gestor') return res.status(403).json({ error: 'Apenas gestores podem editar' });
   const { nome, perfil, email, telefone, senha } = req.body;
   try {
-    let extra = '';
-    const params = [nome, perfil, email, telefone, req.params.id];
     if (senha && senha.length >= 6) {
       const hash = await bcrypt.hash(senha, 10);
-      extra = ', senha_hash=$6, primeiro_acesso=FALSE';
-      params.splice(4, 0, hash);
-      params[params.length - 1] = req.params.id;
+      await pool.query(
+        `UPDATE pessoas SET nome=$1, perfil=$2, email=$3, telefone=$4, senha_hash=$5, primeiro_acesso=FALSE WHERE id=$6`,
+        [nome, perfil, email, telefone, hash, req.params.id]
+      );
+    } else {
+      await pool.query(
+        `UPDATE pessoas SET nome=$1, perfil=$2, email=$3, telefone=$4 WHERE id=$5`,
+        [nome, perfil, email, telefone, req.params.id]
+      );
     }
-    await pool.query(
-      `UPDATE pessoas SET nome=$1, perfil=$2, email=$3, telefone=$4${extra} WHERE id=$${params.length}`,
-      params
-    );
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: 'Erro ao atualizar' }); }
+  } catch (e) { console.error('Erro PUT pessoa:', e); res.status(500).json({ error: 'Erro ao atualizar' }); }
 });
 
 app.delete('/api/pessoas/:id', auth, async (req, res) => {
@@ -147,19 +147,19 @@ app.get('/api/aulas', auth, async (req, res) => {
 
 app.get('/api/aulas/ativa', auth, async (req, res) => {
   try {
-    const r = await pool.query(`SELECT * FROM aulas WHERE status IN ('agendada','confirmada') ORDER BY data ASC, horario ASC LIMIT 1`);
+    const r = await pool.query(`SELECT * FROM aulas WHERE status IN ('agendada','confirmada') AND (data + prazo_dashboard * INTERVAL '1 day') >= CURRENT_DATE ORDER BY data ASC, horario ASC LIMIT 1`);
     res.json(r.rows[0] || null);
   } catch (e) { res.status(500).json({ error: 'Erro ao buscar aula ativa' }); }
 });
 
 app.post('/api/aulas', auth, async (req, res) => {
   if (req.user.perfil !== 'gestor') return res.status(403).json({ error: 'Apenas gestores podem criar aulas' });
-  const { titulo, data, horario, local, descricao } = req.body;
+  const { titulo, data, horario, local, descricao, prazo } = req.body;
   if (!titulo||!data||!horario||!local) return res.status(400).json({ error: 'Campos obrigatórios faltando' });
   try {
     const r = await pool.query(
-      `INSERT INTO aulas (titulo,data,horario,local,descricao,gestor_id,status) VALUES ($1,$2,$3,$4,$5,$6,'agendada') RETURNING *`,
-      [titulo, data, horario, local, descricao||'', req.user.id]
+      `INSERT INTO aulas (titulo,data,horario,local,descricao,gestor_id,status,prazo_dashboard) VALUES ($1,$2,$3,$4,$5,$6,'agendada',$7) RETURNING *`,
+      [titulo, data, horario, local, descricao||'', req.user.id, prazo||3]
     );
     res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: 'Erro ao criar aula' }); }
@@ -333,6 +333,68 @@ app.delete('/api/equipes/:id', auth, async (req, res) => {
     await pool.query(`DELETE FROM equipes WHERE id=$1`, [req.params.id]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: 'Erro ao deletar equipe' }); }
+});
+
+
+// =============================================
+// RELATÓRIO DE PRESENÇAS
+// =============================================
+app.get('/api/relatorio/presencas', auth, async (req, res) => {
+  if (req.user.perfil !== 'gestor') return res.status(403).json({ error: 'Apenas gestores' });
+  const { data_inicio, data_fim, perfil } = req.query;
+  if (!data_inicio || !data_fim) return res.status(400).json({ error: 'Informe data_inicio e data_fim' });
+  try {
+    // Aulas no período
+    let qAulas = `SELECT * FROM aulas WHERE data BETWEEN $1 AND $2 ORDER BY data ASC`;
+    const aulas = await pool.query(qAulas, [data_inicio, data_fim]);
+
+    // Pessoas do perfil selecionado
+    let qPessoas = `SELECT id, nome, perfil FROM pessoas WHERE ativo=TRUE`;
+    const params = [];
+    if (perfil && perfil !== 'todos') {
+      qPessoas += ` AND perfil=$1`;
+      params.push(perfil);
+    } else {
+      qPessoas += ` AND perfil IN ('aluno','estagiario','voluntario')`;
+    }
+    qPessoas += ` ORDER BY perfil, nome`;
+    const pessoas = await pool.query(qPessoas, params);
+
+    // Confirmações de todas as aulas no período
+    const aulaIds = aulas.rows.map(a => a.id);
+    let confirmacoes = [];
+    if (aulaIds.length > 0) {
+      const qConf = `SELECT * FROM confirmacoes WHERE aula_id = ANY($1)`;
+      const conf = await pool.query(qConf, [aulaIds]);
+      confirmacoes = conf.rows;
+    }
+
+    // Montar relatório por pessoa
+    const relatorio = pessoas.rows.map(p => {
+      const presencas = aulas.rows.map(a => {
+        const conf = confirmacoes.find(c => c.aula_id === a.id && c.pessoa_id === p.id);
+        return {
+          aula_id: a.id,
+          aula_titulo: a.titulo,
+          aula_data: a.data,
+          aula_horario: a.horario,
+          status: conf ? conf.status : 'pendente'
+        };
+      });
+      const total    = presencas.length;
+      const confirmados = presencas.filter(p => p.status === 'confirmado').length;
+      const faltas   = presencas.filter(p => p.status === 'nao_vai').length;
+      const pendentes = presencas.filter(p => p.status === 'pendente').length;
+      return { ...p, presencas, total, confirmados, faltas, pendentes };
+    });
+
+    res.json({
+      periodo: { inicio: data_inicio, fim: data_fim },
+      total_aulas: aulas.rows.length,
+      aulas: aulas.rows,
+      relatorio
+    });
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Erro ao gerar relatório' }); }
 });
 
 // =============================================

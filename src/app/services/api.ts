@@ -43,3 +43,7 @@ export async function updateEquipe(id: string, d: any) { return req('PUT', `/equ
 export async function deleteEquipe(id: string) { return req('DELETE', `/equipes/${id}`); }
 
 export async function updatePessoa(id: string, d: any) { return req('PUT', `/pessoas/${id}`, d); }
+
+export async function getRelatorioPresencas(dataInicio: string, dataFim: string, perfil: string) {
+  return req('GET', `/relatorio/presencas?data_inicio=${dataInicio}&data_fim=${dataFim}&perfil=${perfil}`);
+}

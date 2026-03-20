@@ -479,7 +479,8 @@ function setupForms() {
     const descricao = (document.getElementById('aula-desc') as HTMLTextAreaElement)?.value?.trim();
     if (!titulo || !data || !horario || !local) { toast('⚠️ Preencha todos os campos.', false); return; }
     try {
-      await api.addAula({ titulo, data, horario, local, descricao });
+      const prazo = parseInt((document.getElementById('aula-prazo') as HTMLSelectElement)?.value || '3');
+      await api.addAula({ titulo, data, horario, local, descricao, prazo });
       toast('✅ Aula agendada!');
       closeModal('modal-nova-aula');
       ['aula-titulo','aula-data','aula-horario','aula-local','aula-desc'].forEach(id => {
@@ -541,6 +542,8 @@ function setupForms() {
       if (btnCancelar) btnCancelar.style.display = 'none';
       const titleModal = document.getElementById('modal-cadastro-title');
       if (titleModal) titleModal.textContent = '👤 Novo Cadastro';
+      const btnSalvarS = document.getElementById('btn-salvar-pessoa');
+      if (btnSalvarS) btnSalvarS.textContent = '✅ Cadastrar';
       renderCadastro();
     } catch (e: any) { toast('❌ ' + e.message, false); }
   });
@@ -924,6 +927,8 @@ function setupEquipeForm() {
   (document.getElementById('cad-tel') as HTMLInputElement).value = tel;
   (document.getElementById('cad-email') as HTMLInputElement).value = email;
   (document.getElementById('cad-perfil') as HTMLSelectElement).value = perfil;
+  const btnSalvar = document.getElementById('btn-salvar-pessoa');
+  if (btnSalvar) btnSalvar.textContent = '💾 Salvar Alterações';
   const btnCancelar = document.getElementById('btn-cancelar-edicao');
   if (btnCancelar) btnCancelar.style.display = 'block';
   const title = document.getElementById('modal-cadastro-title');
@@ -943,4 +948,189 @@ function setupEquipeForm() {
   const title = document.getElementById('modal-cadastro-title');
   if (title) title.textContent = '👤 Novo Cadastro';
   closeModal('modal-cadastro');
+};
+
+// ==============================================
+// RELATÓRIO
+// ==============================================
+let _dadosRelatorio: any = null;
+
+async function renderRelatorio() {
+  const u = api.getUsuario();
+  if (!u || u.perfil !== 'gestor') return;
+  // Esconder nav relatorio para não gestores (já feito no initApp)
+}
+
+(window as any).gerarRelatorio = async function() {
+  const inicio = (document.getElementById('rel-data-inicio') as HTMLInputElement)?.value;
+  const fim    = (document.getElementById('rel-data-fim') as HTMLInputElement)?.value;
+  const perfil = (document.getElementById('rel-perfil') as HTMLSelectElement)?.value;
+  const container = document.getElementById('relatorio-content');
+  const fabPDF    = document.getElementById('fab-relatorio-pdf');
+
+  if (!inicio || !fim) { toast('⚠️ Selecione data início e fim.', false); return; }
+  if (inicio > fim)    { toast('⚠️ Data início maior que data fim.', false); return; }
+
+  if (container) setLoading(container, 'Gerando relatório...');
+
+  try {
+    const dados = await api.getRelatorioPresencas(inicio, fim, perfil);
+    _dadosRelatorio = dados;
+    if (fabPDF) fabPDF.style.display = dados.relatorio.length ? 'flex' : 'none';
+
+    if (!dados.total_aulas) {
+      if (container) container.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">Nenhuma aula no período</div><div class="empty-sub">${fmtDateStr(inicio)} até ${fmtDateStr(fim)}</div></div>`;
+      return;
+    }
+
+    const pLabel: Record<string,string> = { aluno:'🏄 Aluno', estagiario:'📋 Estagiário', voluntario:'🤝 Voluntário' };
+    let html = '';
+
+    // Resumo geral
+    const totalConf  = dados.relatorio.reduce((a: number, p: any) => a + p.confirmados, 0);
+    const totalFalta = dados.relatorio.reduce((a: number, p: any) => a + p.faltas, 0);
+    const totalPend  = dados.relatorio.reduce((a: number, p: any) => a + p.pendentes, 0);
+
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:8px 16px;">
+      <div style="background:white;border-radius:12px;padding:14px;text-align:center;box-shadow:var(--shadow);border-top:3px solid var(--green-go);">
+        <div style="font-size:24px;font-weight:800;color:var(--green-go);">${totalConf}</div>
+        <div style="font-size:11px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px;">Presenças</div>
+      </div>
+      <div style="background:white;border-radius:12px;padding:14px;text-align:center;box-shadow:var(--shadow);border-top:3px solid var(--coral);">
+        <div style="font-size:24px;font-weight:800;color:var(--coral);">${totalFalta}</div>
+        <div style="font-size:11px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px;">Faltas</div>
+      </div>
+      <div style="background:white;border-radius:12px;padding:14px;text-align:center;box-shadow:var(--shadow);border-top:3px solid var(--sun);">
+        <div style="font-size:24px;font-weight:800;color:var(--sun);">${totalPend}</div>
+        <div style="font-size:11px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px;">Pendentes</div>
+      </div>
+    </div>`;
+
+    html += `<div style="padding:4px 16px 8px;font-size:13px;color:var(--text-light);">
+      📅 ${dados.total_aulas} aula(s) entre ${fmtDateStr(inicio)} e ${fmtDateStr(fim)}
+    </div>`;
+
+    // Por perfil
+    const grupos: Record<string, any[]> = { aluno:[], estagiario:[], voluntario:[] };
+    for (const p of dados.relatorio) {
+      if (grupos[p.perfil]) grupos[p.perfil].push(p);
+    }
+
+    for (const [perf, lista] of Object.entries(grupos)) {
+      if (!lista.length) continue;
+      html += `<div class="card-title" style="padding:8px 16px 4px;">${pLabel[perf] || perf}</div>`;
+      html += `<div class="card" style="margin:4px 16px 12px;padding:0;">`;
+
+      for (const p of lista) {
+        const pct = dados.total_aulas > 0 ? Math.round((p.confirmados / dados.total_aulas) * 100) : 0;
+        const barColor = pct >= 75 ? 'var(--green-go)' : pct >= 50 ? 'var(--sun)' : 'var(--coral)';
+        html += `<div style="padding:14px 16px;border-bottom:1px solid #f0f4f8;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <div>
+              <div style="font-weight:700;font-size:15px;">${p.nome}</div>
+              <div style="font-size:12px;color:var(--text-light);">
+                ✅ ${p.confirmados} presença(s) · ❌ ${p.faltas} falta(s) · ⏳ ${p.pendentes} pendente(s)
+              </div>
+            </div>
+            <div style="font-family:var(--font-display);font-size:22px;color:${barColor};">${pct}%</div>
+          </div>
+          <div style="background:#e0e8f0;border-radius:4px;height:6px;">
+            <div style="background:${barColor};width:${pct}%;height:6px;border-radius:4px;transition:width .5s;"></div>
+          </div>
+          <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;">
+            ${p.presencas.map((a: any) => {
+              const cor = a.status === 'confirmado' ? '#e8f5e9' : a.status === 'nao_vai' ? '#fce4ec' : '#fff8e1';
+              const icone = a.status === 'confirmado' ? '✅' : a.status === 'nao_vai' ? '❌' : '⏳';
+              return `<span style="background:${cor};padding:2px 8px;border-radius:10px;font-size:10px;" title="${a.aula_titulo} — ${fmtDateStr(a.aula_data)}">${icone} ${fmtDateStr(a.aula_data)}</span>`;
+            }).join('')}
+          </div>
+        </div>`;
+      }
+      html += `</div>`;
+    }
+
+    if (container) container.innerHTML = html;
+  } catch (e: any) {
+    if (container) container.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><div class="empty-text">${e.message}</div></div>`;
+  }
+};
+
+function fmtDateStr(d: string): string {
+  try { return new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', { day:'2-digit', month:'short', year:'numeric' }); }
+  catch { return d; }
+}
+
+// Gerar PDF do relatório
+(window as any).gerarRelatorioPDF = function() {
+  if (!_dadosRelatorio) return;
+  const dados = _dadosRelatorio;
+  const inicio = (document.getElementById('rel-data-inicio') as HTMLInputElement)?.value;
+  const fim    = (document.getElementById('rel-data-fim') as HTMLInputElement)?.value;
+  const pLabel: Record<string,string> = { aluno:'Aluno', estagiario:'Estagiário', voluntario:'Voluntário' };
+
+  let linhas = '';
+  for (const p of dados.relatorio) {
+    const pct = dados.total_aulas > 0 ? Math.round((p.confirmados / dados.total_aulas) * 100) : 0;
+    const cor = pct >= 75 ? '#00C853' : pct >= 50 ? '#FFB300' : '#FF5252';
+    linhas += `<tr>
+      <td>${p.nome}</td>
+      <td style="text-align:center;">${pLabel[p.perfil]||p.perfil}</td>
+      <td style="text-align:center;color:#00C853;font-weight:bold;">${p.confirmados}</td>
+      <td style="text-align:center;color:#FF5252;font-weight:bold;">${p.faltas}</td>
+      <td style="text-align:center;color:#FFB300;">${p.pendentes}</td>
+      <td style="text-align:center;font-weight:bold;color:${cor};">${pct}%</td>
+    </tr>`;
+  }
+
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+  <title>Relatório de Presenças</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 30px; color: #111; max-width: 900px; margin: 0 auto; }
+    .header { text-align: center; border-bottom: 3px solid #0a2540; padding-bottom: 16px; margin-bottom: 20px; }
+    .header img { height: 70px; margin-bottom: 8px; }
+    .header h1 { font-size: 20px; margin: 0; color: #0a2540; }
+    .header h2 { font-size: 14px; font-weight: normal; color: #555; margin: 4px 0 0; }
+    .resumo { display: flex; gap: 16px; margin-bottom: 24px; }
+    .resumo-card { flex: 1; text-align: center; padding: 14px; border-radius: 8px; }
+    .resumo-card .num { font-size: 28px; font-weight: bold; }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #0a2540; color: white; padding: 10px 12px; text-align: left; font-size: 13px; }
+    td { padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 13px; }
+    tr:nth-child(even) td { background: #f9f9f9; }
+    .rodape { margin-top: 30px; text-align: center; font-size: 11px; color: #aaa; border-top: 1px solid #eee; padding-top: 12px; }
+    @media print { body { padding: 10px; } }
+  </style></head><body>
+  <div class="header">
+    <img src="/logo parasurf.jpeg" onerror="this.style.display='none'" alt="Logo">
+    <h1>Instituto ParaSurf — Relatório de Presenças</h1>
+    <h2>Período: ${fmtDateStr(inicio)} até ${fmtDateStr(fim)} · ${dados.total_aulas} aula(s)</h2>
+  </div>
+  <div class="resumo">
+    <div class="resumo-card" style="background:#e8f5e9;">
+      <div class="num" style="color:#00C853;">${dados.relatorio.reduce((a:number,p:any)=>a+p.confirmados,0)}</div>
+      <div>Presenças</div>
+    </div>
+    <div class="resumo-card" style="background:#fce4ec;">
+      <div class="num" style="color:#FF5252;">${dados.relatorio.reduce((a:number,p:any)=>a+p.faltas,0)}</div>
+      <div>Faltas</div>
+    </div>
+    <div class="resumo-card" style="background:#fff8e1;">
+      <div class="num" style="color:#FFB300;">${dados.relatorio.reduce((a:number,p:any)=>a+p.pendentes,0)}</div>
+      <div>Pendentes</div>
+    </div>
+    <div class="resumo-card" style="background:#e3f2fd;">
+      <div class="num" style="color:#1565C0;">${dados.relatorio.length}</div>
+      <div>Participantes</div>
+    </div>
+  </div>
+  <table>
+    <thead><tr><th>Nome</th><th>Perfil</th><th>Presenças</th><th>Faltas</th><th>Pendentes</th><th>%</th></tr></thead>
+    <tbody>${linhas}</tbody>
+  </table>
+  <div class="rodape">Instituto ParaSurf · Vila Velha, ES · +55 27 98866-8868 · Gerado em ${new Date().toLocaleString('pt-BR')}</div>
+  <script>window.onload = () => window.print();<\/script>
+  </body></html>`;
+
+  const blob = new Blob([html], { type: 'text/html' });
+  window.open(URL.createObjectURL(blob), '_blank');
 };

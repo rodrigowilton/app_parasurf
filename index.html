@@ -139,11 +139,41 @@
     <button class="fab" id="fab-cadastro" onclick="openModal('modal-cadastro')" title="Novo Cadastro" style="display:none;">➕</button>
   </div>
 
+
+  <div class="page" id="page-relatorio">
+    <div class="section-title">📊 Relatório de Presenças</div>
+    <div class="section-sub">Selecione o período e o perfil para gerar o relatório.</div>
+
+    <div class="card" style="margin:8px 16px;">
+      <div class="form-group">
+        <label class="form-label">Data Início</label>
+        <input class="form-input" id="rel-data-inicio" type="date" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Data Fim</label>
+        <input class="form-input" id="rel-data-fim" type="date" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Perfil</label>
+        <select class="form-select" id="rel-perfil">
+          <option value="todos">👥 Todos</option>
+          <option value="aluno">🏄 Alunos</option>
+          <option value="estagiario">📋 Estagiários</option>
+          <option value="voluntario">🤝 Voluntários</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-full" id="btn-gerar-relatorio" onclick="gerarRelatorio()">📊 Gerar Relatório</button>
+    </div>
+
+    <div id="relatorio-content"></div>
+    <button class="fab" id="fab-relatorio-pdf" onclick="gerarRelatorioPDF()" title="Exportar PDF" style="display:none;">📄</button>
+  </div>
   <nav class="bottom-nav">
     <button class="nav-item active" data-page="page-home"><span class="nav-icon">🏠</span><span>Início</span></button>
     <button class="nav-item" data-page="page-avisos" id="nav-avisos"><span class="nav-icon">📢</span><span>Avisos</span></button>
     <button class="nav-item" data-page="page-confirmacao" id="nav-confirmacao"><span class="nav-icon">✅</span><span>Confirmar</span></button>
     <button class="nav-item" data-page="page-equipes" id="nav-equipes"><span class="nav-icon">👥</span><span>Equipes</span></button>
+    <button class="nav-item" data-page="page-relatorio" id="nav-relatorio"><span class="nav-icon">📊</span><span>Relatório</span></button>
     <button class="nav-item" data-page="page-cadastro" id="nav-cadastro"><span class="nav-icon">👥</span><span>Cadastro</span></button>
   </nav>
 
@@ -251,6 +281,19 @@
       <textarea class="form-textarea" id="aula-desc" placeholder="Informações adicionais sobre a aula..."></textarea>
     </div>
     
+    <div class="form-group">
+      <label class="form-label">Prazo no Dashboard (dias após a aula)</label>
+      <select class="form-select" id="aula-prazo">
+        <option value="0">Sumir no mesmo dia</option>
+        <option value="1">1 dia após a aula</option>
+        <option value="2">2 dias após a aula</option>
+        <option value="3" selected>3 dias após a aula</option>
+        <option value="5">5 dias após a aula</option>
+        <option value="7">7 dias após a aula</option>
+        <option value="14">14 dias após a aula</option>
+        <option value="30">30 dias após a aula</option>
+      </select>
+    </div>
     <button class="btn btn-primary btn-full" id="btn-salvar-aula">✅ Agendar Aula</button>
   </div>
 </div>
