@@ -145,6 +145,30 @@ app.get('/api/aulas', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'Erro ao buscar aulas' }); }
 });
 
+
+app.get('/api/aulas/hoje', auth, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT id, titulo, data, horario, local, descricao, status, prazo_dashboard, gestor_id FROM aulas WHERE status IN ('agendada','confirmada') AND (data + COALESCE(prazo_dashboard,3) * INTERVAL '1 day') >= CURRENT_DATE ORDER BY data ASC, horario ASC`
+    );
+    res.json(r.rows);
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Erro ao buscar aulas' }); }
+});
+
+app.get('/api/aulas/pessoa/:pessoaId', auth, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT DISTINCT a.* FROM aulas a JOIN equipes e ON e.aula_id=a.id JOIN equipe_membros em ON em.equipe_id=e.id WHERE em.pessoa_id=$1 AND a.status IN ('agendada','confirmada') AND (a.data + a.prazo_dashboard * INTERVAL '1 day') >= CURRENT_DATE ORDER BY a.data ASC, a.horario ASC LIMIT 1`,
+      [req.params.pessoaId]
+    );
+    if (!r.rows.length) {
+      const r2 = await pool.query(`SELECT * FROM aulas WHERE status IN ('agendada','confirmada') AND (data + prazo_dashboard * INTERVAL '1 day') >= CURRENT_DATE ORDER BY data ASC, horario ASC LIMIT 1`);
+      return res.json(r2.rows[0] || null);
+    }
+    res.json(r.rows[0]);
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Erro ao buscar aula da pessoa' }); }
+});
+
 app.get('/api/aulas/ativa', auth, async (req, res) => {
   try {
     const r = await pool.query(`SELECT * FROM aulas WHERE status IN ('agendada','confirmada') AND (data + prazo_dashboard * INTERVAL '1 day') >= CURRENT_DATE ORDER BY data ASC, horario ASC LIMIT 1`);
@@ -245,6 +269,52 @@ app.delete('/api/avisos/:id', auth, async (req, res) => {
 // =============================================
 // EQUIPES — /minha ANTES de /:aulaId
 // =============================================
+
+app.get('/api/equipes/todas', auth, async (req, res) => {
+  try {
+    const equipes = await pool.query(
+      `SELECT e.*, a.titulo as aula_titulo, a.data as aula_data, a.horario as aula_horario
+       FROM equipes e JOIN aulas a ON e.aula_id=a.id
+       ORDER BY a.data DESC, e.criado_em ASC`
+    );
+    for (const eq of equipes.rows) {
+      const membros = await pool.query(
+        `SELECT em.*, p.nome, p.perfil, p.telefone
+         FROM equipe_membros em JOIN pessoas p ON em.pessoa_id=p.id
+         WHERE em.equipe_id=$1 ORDER BY em.papel, p.nome`,
+        [eq.id]
+      );
+      eq.membros = membros.rows;
+    }
+    res.json(equipes.rows);
+  } catch(e) { console.error(e); res.status(500).json({ error: 'Erro ao buscar equipes' }); }
+});
+
+
+app.get('/api/equipes/minhas/:pessoaId', auth, async (req, res) => {
+  try {
+    const equipes = await pool.query(
+      `SELECT e.*, a.titulo as aula_titulo, a.data as aula_data, a.horario as aula_horario
+       FROM equipes e
+       JOIN equipe_membros em ON em.equipe_id = e.id
+       JOIN aulas a ON a.id = e.aula_id
+       WHERE em.pessoa_id = $1
+       ORDER BY a.data ASC, e.nome ASC`,
+      [req.params.pessoaId]
+    );
+    for (const eq of equipes.rows) {
+      const membros = await pool.query(
+        `SELECT em.*, p.nome, p.perfil FROM equipe_membros em
+         JOIN pessoas p ON em.pessoa_id = p.id
+         WHERE em.equipe_id = $1 ORDER BY em.papel, p.nome`,
+        [eq.id]
+      );
+      eq.membros = membros.rows;
+    }
+    res.json(equipes.rows);
+  } catch(e) { console.error(e); res.status(500).json({ error: 'Erro ao buscar equipes' }); }
+});
+
 app.get('/api/equipes/minha/:aulaId/:pessoaId', auth, async (req, res) => {
   try {
     const r = await pool.query(
@@ -383,9 +453,11 @@ app.get('/api/relatorio/presencas', auth, async (req, res) => {
       });
       const total    = presencas.length;
       const confirmados = presencas.filter(p => p.status === 'confirmado').length;
-      const faltas   = presencas.filter(p => p.status === 'nao_vai').length;
+      const faltas   = presencas.filter(p => p.status === 'nao_vai' || p.status === 'falta').length;
+      const faltasOficiais = presencas.filter(p => p.status === 'falta').length;
+      const naoVai  = presencas.filter(p => p.status === 'nao_vai').length;
       const pendentes = presencas.filter(p => p.status === 'pendente').length;
-      return { ...p, presencas, total, confirmados, faltas, pendentes };
+      return { ...p, presencas, total, confirmados, faltas, faltasOficiais, naoVai, pendentes };
     });
 
     res.json({

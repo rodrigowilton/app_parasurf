@@ -131,6 +131,7 @@
         <option value="estagiario">📋 Estagiários</option>
         <option value="voluntario">🤝 Voluntários</option>
         <option value="gestor">🏢 Gestores</option>
+        <option value="aulas">📅 Aulas</option>
       </select>
     </div>
     <div class="section-sub" id="cadastro-section-title">Lista</div>
@@ -333,6 +334,10 @@
     <button class="modal-close" onclick="closeModal('modal-nova-equipe')">✕</button>
     <div class="modal-title" id="modal-equipe-title">🤝 Nova Equipe</div>
     <input type="hidden" id="equipe-edit-id" value="">
+    <div class="form-group">
+      <label class="form-label">Aula</label>
+      <select class="form-select" id="equipe-aula-id"></select>
+    </div>
     <div class="form-group">
       <label class="form-label">Nome da Equipe</label>
       <input class="form-input" id="equipe-nome" type="text" placeholder="Ex: Equipe Ondas" />

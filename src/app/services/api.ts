@@ -47,3 +47,8 @@ export async function updatePessoa(id: string, d: any) { return req('PUT', `/pes
 export async function getRelatorioPresencas(dataInicio: string, dataFim: string, perfil: string) {
   return req('GET', `/relatorio/presencas?data_inicio=${dataInicio}&data_fim=${dataFim}&perfil=${perfil}`);
 }
+
+export async function getAulasHoje() { return req('GET', '/aulas/hoje'); }
+export async function getAulaPessoa(pessoaId: string) { return req('GET', `/aulas/pessoa/${pessoaId}`); }
+export async function getTodasEquipes() { return req('GET', '/equipes/todas'); }
+export async function getMinhasEquipes(pessoaId: string) { return req('GET', `/equipes/minhas/${pessoaId}`); }

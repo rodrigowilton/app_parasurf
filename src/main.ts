@@ -94,131 +94,149 @@ async function renderHome() {
   setLoading(homeContent);
 
   try {
-    const aula = await api.getAulaAtiva();
-
     if (u.perfil === 'gestor') {
-      await renderHomeGestor(homeContent, aula);
+      const aulas = await api.getAulasHoje();
+      await renderHomeGestor(homeContent, aulas);
     } else {
-      await renderHomeAluno(homeContent, u, aula);
+      let aulas: any[] = [];
+      try { aulas = await api.getAulasHoje(); } catch(e) { aulas = []; }
+      await renderHomeAluno(homeContent, u, aulas);
     }
   } catch (e: any) {
     homeContent.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><div class="empty-text">Erro ao carregar</div><div class="empty-sub">${e.message}</div></div>`;
   }
 }
 
-async function renderHomeGestor(container: HTMLElement, aula: any) {
+async function renderHomeGestor(container: HTMLElement, aulas: any[]) {
   const [alunos, est, vol] = await Promise.all([
     api.getPessoas('aluno'),
     api.getPessoas('estagiario'),
     api.getPessoas('voluntario'),
   ]);
 
-  let confs: any[] = [];
-  let confirmados = 0;
-  if (aula) {
-    confs = await api.getConfirmacoes(aula.id);
-    confirmados = confs.filter((c: any) => c.status === 'confirmado').length;
+  let totalConfirmados = 0;
+  let todasConfs: any[] = [];
+  if (aulas.length) {
+    const confsArr = await Promise.all(aulas.map(a => api.getConfirmacoes(a.id)));
+    todasConfs = confsArr.flat();
+    totalConfirmados = todasConfs.filter((c: any) => c.status === 'confirmado').length;
   }
 
   const statConf = document.getElementById('stat-confirmados');
   const statTeam = document.getElementById('stat-equipe');
   const statAlun = document.getElementById('stat-alunos');
-  if (statConf) statConf.textContent = String(confirmados);
+  if (statConf) statConf.textContent = String(totalConfirmados);
   if (statTeam) statTeam.textContent = String(est.length + vol.length);
   if (statAlun) statAlun.textContent = String(alunos.length);
 
   let html = '';
-  if (aula) {
-    html += `
-    <div class="card-title" style="padding:0 16px;margin-top:8px;">📅 Próxima Aula</div>
-    <div class="aula-card">
-      <div class="aula-title">${aula.titulo}</div>
-      <div class="aula-info">📍 ${aula.local}</div>
-      <div class="aula-date">🗓 ${fmtDate(aula.data)} às ${String(aula.horario).slice(0,5)}</div>
-      ${aula.descricao ? `<div style="margin-top:8px;font-size:13px;opacity:.9;">📝 ${aula.descricao}</div>` : ''}
-      <button class="btn btn-danger btn-sm" style="margin-top:12px;" onclick="deleteAula('${aula.id}')">🗑 Cancelar Aula</button>
-    </div>`;
-  } else {
+
+  if (!aulas.length) {
     html += `<div class="card" style="margin:12px 16px;text-align:center;color:var(--text-light);">
       <div style="font-size:48px;margin-bottom:10px;">📅</div>
       <div style="font-weight:bold;margin-bottom:5px;">Nenhuma aula agendada</div>
       <div style="font-size:13px;margin-bottom:15px;">Clique no botão + para agendar.</div>
       <button class="btn btn-primary" onclick="openModal('modal-nova-aula')">+ Nova Aula</button>
     </div>`;
+    container.innerHTML = html;
+    return;
   }
 
-  if (aula) {
-    html += `<div class="card-title" style="padding:0 16px 4px;">👥 Confirmações da Equipe</div>`;
-    const grupos = [
-      { label: 'Alunos', lista: alunos, perfil: 'aluno' },
-      { label: 'Estagiários', lista: est, perfil: 'estagiario' },
-      { label: 'Voluntários', lista: vol, perfil: 'voluntario' },
-    ];
-    for (const g of grupos) {
-      if (!g.lista.length) continue;
-      html += `<div class="card" style="margin:6px 16px;"><div class="card-title">${g.label}</div>`;
-      for (const p of g.lista) {
-        const c = confs.find((x: any) => x.pessoa_id === p.id);
-        const badge = c?.status === 'confirmado'
-          ? '<span class="badge badge-confirm">✅ Confirmado</span>'
-          : c?.status === 'nao_vai'
-          ? '<span class="badge" style="background:#fce4ec;color:#c62828;">❌ Não vai</span>'
-          : '<span class="badge badge-pendente">⏳ Pendente</span>';
-        html += `<div class="person-row">
-          <div class="avatar avatar-${g.perfil}">${initials(p.nome)}</div>
-          <div class="person-info">
-            <div class="person-name">${p.nome}</div>
-            <div class="person-sub">${p.telefone || ''}</div>
-          </div>${badge}</div>`;
-      }
-      html += `</div>`;
-    }
+  html += `<div class="card-title" style="padding:8px 16px 4px;">📅 Aulas Ativas</div>`;
+
+  for (const aula of aulas) {
+    const confs = await api.getConfirmacoes(aula.id);
+    const confirmados = confs.filter((c: any) => c.status === 'confirmado').length;
+    const naoVai     = confs.filter((c: any) => c.status === 'nao_vai').length;
+    const faltas     = confs.filter((c: any) => c.status === 'falta').length;
+    const total      = alunos.length + est.length + vol.length;
+    const pendentes  = total - confs.length;
+    const pct        = total > 0 ? Math.round((confirmados / total) * 100) : 0;
+
+    html += `<div class="card" style="margin:6px 16px;padding:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
+        <div>
+          <div style="font-weight:800;font-size:17px;color:var(--ocean-deep);">📅 ${aula.titulo}</div>
+          <div style="font-size:12px;color:var(--text-light);margin-top:4px;">📍 ${aula.local}</div>
+          <div style="font-size:12px;color:var(--text-light);">🗓 ${fmtDate(aula.data)} às ${String(aula.horario).slice(0,5)}</div>
+          ${aula.descricao ? `<div style="font-size:12px;color:var(--text-light);margin-top:2px;">📝 ${aula.descricao}</div>` : ''}
+        </div>
+        <div style="font-family:var(--font-display);font-size:28px;color:${pct>=75?'var(--green-go)':pct>=50?'var(--sun)':'var(--coral)'};">${pct}%</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px;">
+        <div style="text-align:center;background:#e8f5e9;border-radius:8px;padding:8px 4px;">
+          <div style="font-weight:800;font-size:18px;color:var(--green-go);">${confirmados}</div>
+          <div style="font-size:10px;color:var(--text-light);">Confirmados</div>
+        </div>
+        <div style="text-align:center;background:#fce4ec;border-radius:8px;padding:8px 4px;">
+          <div style="font-weight:800;font-size:18px;color:var(--coral);">${naoVai}</div>
+          <div style="font-size:10px;color:var(--text-light);">Não vão</div>
+        </div>
+        <div style="text-align:center;background:#fce4ec;border-radius:8px;padding:8px 4px;">
+          <div style="font-weight:800;font-size:18px;color:#880e4f;">${faltas}</div>
+          <div style="font-size:10px;color:var(--text-light);">Faltas</div>
+        </div>
+        <div style="text-align:center;background:#fff8e1;border-radius:8px;padding:8px 4px;">
+          <div style="font-weight:800;font-size:18px;color:var(--sun);">${pendentes < 0 ? 0 : pendentes}</div>
+          <div style="font-size:10px;color:var(--text-light);">Pendentes</div>
+        </div>
+      </div>
+      <div style="background:#e0e8f0;border-radius:4px;height:6px;margin-bottom:12px;">
+        <div style="background:${pct>=75?'var(--green-go)':pct>=50?'var(--sun)':'var(--coral)'};width:${pct}%;height:6px;border-radius:4px;"></div>
+      </div>
+      <button class="btn btn-danger btn-sm" onclick="deleteAula('${aula.id}')">🗑 Cancelar Aula</button>
+    </div>`;
   }
+
+  html += `<div style="padding:8px 16px 4px;">
+    <button class="btn btn-outline btn-full" onclick="openModal('modal-nova-aula')" style="margin-top:4px;">+ Nova Aula</button>
+  </div>`;
 
   container.innerHTML = html;
 }
 
-async function renderHomeAluno(container: HTMLElement, u: any, aula: any) {
-  let conf: any = null;
-  if (aula) {
-    const confs = await api.getConfirmacoes(aula.id);
-    conf = confs.find((c: any) => c.pessoa_id === u.id) || null;
+async function renderHomeAluno(container: HTMLElement, u: any, aulas: any[]) {
+  if (!aulas || !aulas.length) {
+    container.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">🌊</div>
+      <div class="empty-text">Nenhuma aula agendada</div>
+      <div class="empty-sub">O gestor ainda não agendou uma aula.</div>
+    </div>`;
+    return;
   }
-
   let html = '';
-  if (aula) {
+  for (const aula of aulas) {
+    let conf: any = null;
+    try {
+      const confs = await api.getConfirmacoes(aula.id);
+      conf = confs.find((c: any) => c.pessoa_id === u.id) || null;
+    } catch(e) { conf = null; }
+    const status = conf?.status;
     html += `<div class="aula-card">
       <div class="aula-title">${aula.titulo}</div>
       <div class="aula-info">📍 ${aula.local}</div>
       <div class="aula-date">🗓 ${fmtDate(aula.data)} às ${String(aula.horario).slice(0,5)}</div>
       ${aula.descricao ? `<div style="margin-top:8px;font-size:13px;opacity:.9;">📝 ${aula.descricao}</div>` : ''}
-    </div>`;
-
-    const status = conf?.status;
-    html += `<div class="card confirm-block">
+    </div>
+    <div class="card confirm-block">
       <div class="confirm-wave">🏄</div>
-      <div style="font-weight:800;font-size:18px;margin-bottom:6px;">Você vai para a aula?</div>
+      <div style="font-weight:800;font-size:18px;margin-bottom:6px;">Você vai para esta aula?</div>
       <div style="color:var(--text-light);font-size:14px;margin-bottom:20px;">${aula.titulo}</div>
       <div style="display:flex;gap:12px;justify-content:center;">
         <button class="btn btn-success" onclick="confirmarPresenca('${aula.id}','${u.id}','confirmado')"
-          ${status === 'confirmado' ? 'style="box-shadow:0 0 0 3px #00C853;"' : ''}>✅ Vou!</button>
+          ${status==='confirmado'?'style="box-shadow:0 0 0 3px #00C853;"potion':''}>✅ Vou!</button>
         <button class="btn btn-danger" onclick="confirmarPresenca('${aula.id}','${u.id}','nao_vai')"
-          ${status === 'nao_vai' ? 'style="box-shadow:0 0 0 3px #FF5252;"' : ''}>❌ Não vou</button>
+          ${status==='nao_vai'?'style="box-shadow:0 0 0 3px #FF5252;"':''}> ❌ Não vou</button>
       </div>
       ${status ? `<div style="margin-top:16px;font-size:13px;color:var(--text-light);">
-        Sua resposta: <strong>${status === 'confirmado' ? '✅ Confirmado' : '❌ Não vai'}</strong>
+        Sua resposta: <strong>${status==='confirmado'?'✅ Confirmado':status==='nao_vai'?'❌ Não vai':'🚫 Falta'}</strong>
         <button class="btn btn-outline btn-sm" style="margin-left:10px;" onclick="deleteMinhaConf('${aula.id}','${u.id}')">Excluir</button>
       </div>` : ''}
-    </div>`;
-  } else {
-    html += `<div class="empty-state">
-      <div class="empty-icon">🌊</div>
-      <div class="empty-text">Nenhuma aula agendada</div>
-      <div class="empty-sub">O gestor ainda não agendou uma aula.</div>
     </div>`;
   }
   container.innerHTML = html;
 }
+
 
 // ==============================================
 // RENDER AVISOS
@@ -269,18 +287,19 @@ async function renderConfirmacao() {
   setLoading(container);
 
   try {
-    const aula = await api.getAulaAtiva();
-    if (!aula) {
+    const aulas = await api.getAulasHoje();
+    if (!aulas.length) {
       container.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Nenhuma aula ativa</div></div>`;
       return;
     }
 
-    const [confs, pessoas] = await Promise.all([
-      api.getConfirmacoes(aula.id),
-      api.getPessoas(),
-    ]);
+    const pessoas = await api.getPessoas();
+    let html = '';
 
-    let html = `<div class="aula-card">${aula.titulo}<br>
+    for (const aula of aulas) {
+      const confs = await api.getConfirmacoes(aula.id);
+
+      html += `<div class="aula-card">${aula.titulo}<br>
       <small style="opacity:.8">📍 ${aula.local} | 🗓 ${fmtDate(aula.data)} ${String(aula.horario).slice(0,5)}</small>
     </div>`;
 
@@ -319,6 +338,7 @@ async function renderConfirmacao() {
       }
       html += `</div>`;
     }
+    } // fim for aulas
     container.innerHTML = html;
   } catch (e: any) {
     container.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><div class="empty-text">${e.message}</div></div>`;
@@ -420,7 +440,18 @@ async function renderCadastro() {
   } catch (e: any) { toast('❌ ' + e.message, false); }
 };
 
-(window as any).handleCadastroFilter = function() { renderCadastro(); };
+(window as any).handleCadastroFilter = function() {
+  const filterSel = document.getElementById('cadastro-filter') as HTMLSelectElement;
+  const fabCadastro = document.getElementById('fab-cadastro');
+  if (fabCadastro) {
+    fabCadastro.setAttribute('onclick',
+      filterSel?.value === 'aulas'
+        ? "openModal('modal-nova-aula')"
+        : "openModal('modal-cadastro')"
+    );
+  }
+  renderCadastro();
+};
 
 // ==============================================
 // FORMS
@@ -583,6 +614,8 @@ function initApp() {
   document.getElementById('link-trocar-senha')?.classList.toggle('hidden', !isGestor);
   const navCadastro = document.getElementById('nav-cadastro');
   if (navCadastro) navCadastro.style.display = isGestor ? 'flex' : 'none';
+  const navRelatorio = document.getElementById('nav-relatorio');
+  if (navRelatorio) navRelatorio.style.display = isGestor ? 'flex' : 'none';
   const fabCadastro = document.getElementById('fab-cadastro');
   if (fabCadastro) fabCadastro.style.display = isGestor ? 'flex' : 'none';
   const cadastroFilter = document.getElementById('cadastro-filter-wrap');
@@ -632,18 +665,23 @@ async function renderEquipes() {
     if (u.perfil !== "gestor") {
       const heroStrip = document.querySelector(".hero-strip") as HTMLElement;
       if (heroStrip) heroStrip.style.display = "none";
-      // Mostra apenas a equipe do usuário
-      const minhaEquipe = await api.getMinhaEquipe(aula.id, u.id);
-      if (!minhaEquipe) {
+      const minhasEquipes = await api.getMinhasEquipes(u.id);
+      if (!minhasEquipes.length) {
         container.innerHTML = `<div class="empty-state"><div class="empty-icon">🤝</div><div class="empty-text">Você ainda não foi alocado</div><div class="empty-sub">Aguarde o gestor montar as equipes.</div></div>`;
         return;
       }
-      container.innerHTML = renderEquipeCard(minhaEquipe, u, aula);
+      let htmlEq = '';
+      for (const eq of minhasEquipes) {
+        const aulaEq = { id: eq.aula_id, titulo: eq.aula_titulo, data: eq.aula_data, horario: eq.aula_horario };
+        htmlEq += `<div class="card-title" style="padding:8px 16px 4px;">📅 ${eq.aula_titulo}</div>`;
+        htmlEq += renderEquipeCard(eq, u, aulaEq);
+      }
+      container.innerHTML = htmlEq;
       return;
     }
 
     // Gestor vê todas as equipes
-    const equipes = await api.getEquipes(aula.id);
+    const equipes = await api.getTodasEquipes();
 
     // Quem confirmou mas não está em equipe
     const todasPessoas = await api.getPessoas();
@@ -670,7 +708,7 @@ async function renderEquipes() {
       html += `<div class="empty-state"><div class="empty-icon">🤝</div><div class="empty-text">Nenhuma equipe criada</div><div class="empty-sub">Clique em + para montar a primeira equipe.</div></div>`;
     } else {
       for (const eq of equipes) {
-        html += renderEquipeCard(eq, u, aula);
+        html += renderEquipeCard(eq, u, eq._aula || aula);
       }
     }
     container.innerHTML = html;
@@ -717,12 +755,26 @@ function renderEquipeCard(eq: any, u: any, aula: any): string {
 }
 
 // Abrir modal para nova equipe
-(window as any).abrirNovaEquipe = async function(aulaId: string) {
+(window as any).abrirNovaEquipe = async function(aulaId?: string) {
   (document.getElementById('equipe-edit-id') as HTMLInputElement).value = '';
   (document.getElementById('equipe-nome') as HTMLInputElement).value = '';
   const title = document.getElementById('modal-equipe-title');
   if (title) title.textContent = '🤝 Nova Equipe';
-  await carregarMembrosSeletor(aulaId, []);
+
+  // Carregar aulas no select
+  const selectAula = document.getElementById('equipe-aula-id') as HTMLSelectElement;
+  if (selectAula) {
+    const aulas = await api.getAulasHoje();
+    if (!aulas.length) {
+      toast('⚠️ Nenhuma aula ativa para vincular equipe.', false);
+      return;
+    }
+    selectAula.innerHTML = aulas.map((a: any) =>
+      `<option value="${a.id}" ${a.id === aulaId ? 'selected' : ''}>${a.titulo} — ${fmtDate(a.data)} ${String(a.horario).slice(0,5)}</option>`
+    ).join('');
+    await carregarMembrosSeletor(selectAula.value, []);
+    selectAula.onchange = async () => await carregarMembrosSeletor(selectAula.value, []);
+  }
   openModal('modal-nova-equipe');
 };
 
@@ -889,14 +941,15 @@ function setupEquipeForm() {
     if (!membros.length) { toast('⚠️ Selecione ao menos um membro', false); return; }
 
     try {
-      const aula = await api.getAulaAtiva();
-      if (!aula) { toast('⚠️ Nenhuma aula ativa', false); return; }
+      const selectAula = document.getElementById('equipe-aula-id') as HTMLSelectElement;
+      const aulaId = selectAula?.value;
+      if (!aulaId && !editId) { toast('⚠️ Selecione uma aula', false); return; }
 
       if (editId) {
         await api.updateEquipe(editId, { nome, membros });
         toast('✅ Equipe atualizada!');
       } else {
-        await api.addEquipe({ nome, aula_id: aula.id, membros });
+        await api.addEquipe({ nome, aula_id: aulaId, membros });
         toast('✅ Equipe criada!');
       }
       closeModal('modal-nova-equipe');
@@ -915,9 +968,7 @@ function setupEquipeForm() {
   if (fab) {
     fab.removeAttribute('onclick');
     fab.addEventListener('click', async () => {
-      const aula = await api.getAulaAtiva();
-      if (!aula) { toast('⚠️ Nenhuma aula ativa', false); return; }
-      (window as any).abrirNovaEquipe(aula.id);
+      (window as any).abrirNovaEquipe();
     });
   }
 }
@@ -1040,8 +1091,8 @@ async function renderRelatorio() {
           </div>
           <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;">
             ${p.presencas.map((a: any) => {
-              const cor = a.status === 'confirmado' ? '#e8f5e9' : a.status === 'nao_vai' ? '#fce4ec' : '#fff8e1';
-              const icone = a.status === 'confirmado' ? '✅' : a.status === 'nao_vai' ? '❌' : '⏳';
+              const cor = a.status === 'confirmado' ? '#e8f5e9' : a.status === 'nao_vai' ? '#fce4ec' : a.status === 'falta' ? '#fce4ec' : '#fff8e1';
+              const icone = a.status === 'confirmado' ? '✅' : a.status === 'nao_vai' ? '❌' : a.status === 'falta' ? '🚫' : '⏳';
               return `<span style="background:${cor};padding:2px 8px;border-radius:10px;font-size:10px;" title="${a.aula_titulo} — ${fmtDateStr(a.aula_data)}">${icone} ${fmtDateStr(a.aula_data)}</span>`;
             }).join('')}
           </div>
@@ -1204,3 +1255,23 @@ async function renderPrevisaoTempo() {
     container.innerHTML = `<div style="text-align:center;padding:8px;color:var(--text-light);font-size:12px;">Previsão indisponível</div>`;
   }
 }
+
+(window as any).doDeleteAula = async function(id: string) {
+  if (!confirm('Excluir esta aula permanentemente?')) return;
+  try {
+    await api.deleteAula(id);
+    toast('🗑 Aula excluída.');
+    renderCadastro();
+    renderHome();
+  } catch(e: any) { toast('❌ ' + e.message, false); }
+};
+
+(window as any).darFalta = async function(aulaId: string, pessoaId: string) {
+  if (!confirm('Registrar falta para esta pessoa?')) return;
+  try {
+    await api.confirmar(aulaId, pessoaId, 'falta');
+    toast('🚫 Falta registrada.');
+    renderConfirmacao();
+    renderHome();
+  } catch(e: any) { toast('❌ ' + e.message, false); }
+};
